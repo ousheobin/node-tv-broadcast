@@ -1,7 +1,7 @@
 {
-  "name": "tv-boardcast",
+  "name": "tv-broadcast",
   "version": "1.0.0",
-  "description": "Steve's boardcast client",
+  "description": "Steve's broadcast client",
   "main": "index.js",
   "author": "Steve Ou",
   "license": "MIT",
@@ -16,6 +16,6 @@
     "xml2js": "^0.6.2"
   },
   "bin": {
-    "creator": "./index.js"
+    "tv-broadcast": "./index.js"
   }
 }
