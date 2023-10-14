@@ -1,4 +1,7 @@
 # node-tv-broadcast
+
+[![Node.js CI](https://github.com/ousheobin/node-tv-broadcast/actions/workflows/node.js.yml/badge.svg)](https://github.com/ousheobin/node-tv-broadcast/actions/workflows/node.js.yml)
+
 A client that helps to broadcast m3u8 live stream to TV via DLNA
 
 You might need to install Node.js and Npm/Yarn to run this program.
