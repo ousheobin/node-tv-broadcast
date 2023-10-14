@@ -12,7 +12,8 @@
   "dependencies": {
     "inquirer": "8.2.6",
     "m3u8-parser": "^7.1.0",
-    "upnp-mediarenderer-client": "^1.4.0"
+    "upnp-mediarenderer-client": "^1.4.0",
+    "xml2js": "^0.6.2"
   },
   "bin": {
     "creator": "./index.js"

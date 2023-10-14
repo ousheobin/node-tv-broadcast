@@ -1,5 +1,7 @@
-var https = require('https');
-var m3u8Parser = require('m3u8-parser')
+const https = require('https');
+const m3u8Parser = require('m3u8-parser')
+
+const M3U8_PAIR_REG = /^([^:]+)=\s*(")?(.*)(")?$/;
 
 class M3U8Client {
 

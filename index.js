@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 var MediaRendererClient = require('upnp-mediarenderer-client');
-var UpnpSearcher = require('./UpnpSearcher')
+var UpnpSearcher = require('./component/dlna/SSDPSearcher')
 const inquirer = require("inquirer");
-const M3U8Client = require('./M3U8Fetcher')
+const M3U8Client = require('./component/playlist/M3U8Fetcher')
 
 let allDLNARender = []
 let allChannel = []
@@ -122,10 +122,10 @@ function play(){
     }
 }
 
-let upnpSearcher = new UpnpSearcher()
-upnpSearcher.doSearch((deviceInfo) => {
+let upnpSearcher = new UpnpSearcher((deviceInfo) => {
     allDLNARender.push(deviceInfo)
 })
+upnpSearcher.doSearch()
 
 let m3U8Client = new M3U8Client('https://live.fanmingming.com/tv/m3u/global.m3u');
 m3U8Client.fetch((channel) => { allChannel = channel })
