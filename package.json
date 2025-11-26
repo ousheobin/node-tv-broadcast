@@ -2,20 +2,48 @@
   "name": "tv-broadcast",
   "version": "1.0.0",
   "description": "Steve's broadcast client",
-  "main": "index.js",
+  "main": "electron-main.js",
   "author": "Steve Ou",
   "license": "MIT",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node index.js",
+    "electron": "electron .",
+    "dist": "electron-builder"
   },
   "dependencies": {
+    "electron-store": "^11.0.2",
+    "hls.js": "^1.6.15",
     "inquirer": "8.2.6",
     "m3u8-parser": "^7.1.0",
     "upnp-mediarenderer-client": "^1.4.0",
     "xml2js": "^0.6.2"
   },
+  "devDependencies": {
+    "electron": "^39.2.3",
+    "electron-builder": "^25.0.0"
+  },
   "bin": {
     "tv-broadcast": "./index.js"
+  },
+  "build": {
+    "appId": "com.steveou.tvbroadcast",
+    "productName": "TV Broadcast",
+    "files": [
+      "index.html",
+      "electron-main.js",
+      "preload.js",
+      "renderer.js",
+      "component/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video"
+    }
   }
 }

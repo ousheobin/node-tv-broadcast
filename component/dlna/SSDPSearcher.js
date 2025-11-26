@@ -11,11 +11,15 @@ class UpnpSearcher {
 
     constructor(onDeviceCallBack) {
         this.udpSocket = dgram.createSocket('udp4');
-        this.udpSocket.bind(9001, () => {
-            this.udpSocket.addMembership(SSDPConst.BROADCAST_ADDR)
-        })
         this.udpSocket.on('message', (message, remoteInfo) => {
             this.handleResponse(message, remoteInfo)
+        });
+        // 这里不再反复换端口，直接让系统分配一个可用端口，避免一直报 EADDRINUSE
+        this.udpSocket.on('error', (err)=>{
+            console.error('SSDP socket error: ', err);
+        });
+        this.udpSocket.bind(() => {
+            this.udpSocket.addMembership(SSDPConst.BROADCAST_ADDR)
         });
         this.addrList = []
         this.onDeviceCallBack = onDeviceCallBack;

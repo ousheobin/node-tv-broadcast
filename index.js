@@ -11,7 +11,7 @@ let selectedChannel = null;
 let selectedRemoter = null;
 
 function showMainMenu() {
-    console.clear();
+    // console.clear();
     if(!allChannel || allChannel.length == 0){
         console.log('[频道数据] 搜索频道中')
     }
@@ -113,7 +113,7 @@ function play(){
         let client = new MediaRendererClient(selectedRemoter.address);
         client.load(selectedChannel.uri, {}, function (err, result) {
             if (err) throw err;
-            console.log('正在投屏到 ...' + selectedChannel.title);
+            console.log('正在投屏到 ...' + selectedChannel.uri);
             setTimeout(()=>{showMainMenu()}, 3000);
         });
         client.play();

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TV Broadcast - Electron</title>
+    <!-- TailwindCSS CDN（Electron 本地加载没问题） -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HLS 预览支持（本地依赖，避免外网/证书问题） -->
+    <script src="./node_modules/hls.js/dist/hls.min.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slateBg: '#020617',
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
+    <div class="max-w-5xl mx-auto px-6 py-6 space-y-4">
+      <header class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight text-slate-50">
+            TV Broadcast 桌面版
+          </h1>
+          <p class="text-sm text-slate-400 mt-1">
+            选择 DLNA 设备和频道，一键投屏到客厅电视。
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select
+            id="deviceSelect"
+            class="h-9 rounded-full border border-slate-700 bg-slate-900/80 px-3 pr-7 text-xs text-slate-100 outline-none ring-0 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/50 transition"
+          ></select>
+          <button
+            id="retryButton"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/40 bg-white/5 text-[11px] font-medium text-slate-50 hover:bg-white/10 hover:border-white/70 active:scale-95 transition"
+            title="刷新设备和频道"
+          >
+            R
+          </button>
+          <button
+            id="castButton"
+            class="inline-flex h-9 px-4 items-center justify-center gap-1 rounded-full border border-white/40 bg-white/5 text-xs font-semibold text-slate-50 hover:bg-white/10 hover:border-white/70 active:scale-95 transition"
+          >
+            <span>开始投屏</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+        <!-- 左侧：预览 + 时延预览 + 投屏选择 -->
+        <div class="md:col-span-2 space-y-4">
+          <!-- 频道预览 + 状态 + 测速 -->
+          <section
+            class="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 space-y-3 shadow-lg shadow-black/30"
+          >
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-medium text-slate-50">频道预览</h3>
+              <span class="text-[11px] text-slate-500"
+                >仅在本机播放，不影响电视</span
+              >
+            </div>
+            <div
+              class="relative mt-1 rounded-xl overflow-hidden border border-slate-800 bg-black"
+            >
+              <video
+                id="previewVideo"
+                class="w-full aspect-video bg-black"
+                controls
+                playsinline
+              ></video>
+            </div>
+
+            <div
+              id="statusBar"
+              class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-300"
+            >
+              <div class="space-y-1">
+                <div
+                  class="text-[11px] uppercase tracking-wide text-slate-500"
+                >
+                  状态
+                </div>
+                <span id="statusText">正在初始化...</span>
+              </div>
+
+              <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <span
+                    class="text-[11px] uppercase tracking-wide text-slate-500"
+                  >
+                    M3U8 预估带宽
+                  </span>
+                  <button
+                    id="speedButton"
+                    class="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1 text-[11px] text-slate-300 hover:bg-slate-800/90 transition"
+                  >
+                    ⏱ 测速
+                  </button>
+                </div>
+                <div id="speedText" class="text-[11px] text-slate-400">
+                  暂未测速
+                </div>
+              </div>
+
+              <button
+                id="previewButton"
+                class="inline-flex items-center justify-center gap-2 rounded-full bg-slate-800/80 px-3 py-1.5 text-[12px] text-slate-200 hover:bg-slate-700/90 transition sm:col-span-2"
+              >
+                ▶ 本机预览当前频道
+              </button>
+            </div>
+          </section>
+
+          <!-- 这里原来是投屏设备卡片，已将设备选择移动到右上角 -->
+        </div>
+
+        <!-- 右侧：频道列表 Gallery + m3u8 配置 -->
+        <section
+          class="rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl shadow-black/40 p-5 space-y-3"
+        >
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex flex-col">
+              <h2 class="text-base font-medium text-slate-50">频道 Gallery</h2>
+              <span class="text-[11px] text-slate-500">M3U 列表</span>
+            </div>
+          </div>
+
+          <div class="space-y-2 mb-2">
+            <label
+              for="m3u8Input"
+              class="block text-[11px] font-medium text-slate-400"
+              >m3u8 地址配置</label
+            >
+            <div class="flex items-center gap-2">
+              <input
+                id="m3u8Input"
+                type="text"
+                class="flex-1 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-100 outline-none ring-0 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40 transition"
+                placeholder="输入自定义 m3u8 列表地址"
+              />
+              <button
+                id="m3u8SaveButton"
+                class="inline-flex h-8 px-3 items-center justify-center rounded-full border border-white/40 bg-white/5 text-[11px] font-medium text-slate-50 hover:bg-white/10 hover:border-white/70 active:scale-95 transition"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-slate-500 mb-1">
+            点击卡片选择要播放的频道
+          </p>
+          <div
+            id="channelGallery"
+            class="grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1"
+          ></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+  </html>
+
+

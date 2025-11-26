@@ -21,6 +21,7 @@ class M3U8Client {
                 if(!parser.manifest){
                     return;
                 }
+                debugger
                 let allChannel = []
                 parser.manifest.segments.forEach((entry=>{
                     let title = entry.title;
@@ -45,6 +46,9 @@ class M3U8Client {
                     }
                     if(!titleName){
                         titleName = '未知频道'
+                    }
+                    if(title.split(',').length === 2){
+                        titleName = title.split(',')[1]
                     }
                     titleName = titleName.replace(/"/g,'')
                     allChannel.push({title: titleName, uri: entry.uri})
