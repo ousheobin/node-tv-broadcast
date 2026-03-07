@@ -45,13 +45,18 @@ class M3U8Client {
                         titleName = titleMap.get('group-title')
                     }
                     if(!titleName){
-                        titleName = '未知频道'
+                        titleName = 'Unknown'
                     }
                     if(title.split(',').length === 2){
                         titleName = title.split(',')[1]
                     }
                     titleName = titleName.replace(/"/g,'')
-                    allChannel.push({title: titleName, uri: entry.uri})
+                    // 提取图标 URL
+                    let iconUrl = titleMap.get('tvg-logo')
+                    if(iconUrl){
+                        iconUrl = iconUrl.replace(/"/g,'')
+                    }
+                    allChannel.push({title: titleName, uri: entry.uri, icon: iconUrl})
                 }))
                 if(callBack){
                     callBack(allChannel)

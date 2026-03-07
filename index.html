@@ -5,8 +5,8 @@
     <title>TV Broadcast - Electron</title>
     <!-- TailwindCSS CDN（Electron 本地加载没问题） -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- HLS 预览支持（本地依赖，避免外网/证书问题） -->
-    <script src="./node_modules/hls.js/dist/hls.min.js"></script>
+    <!-- HLS 预览支持 -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -32,10 +32,17 @@
         </div>
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1.5 bg-slate-900/60 rounded-full p-1 border border-slate-700">
-            <select
-              id="deviceSelect"
-              class="h-7 bg-transparent px-2 pr-6 text-xs text-slate-100 outline-none ring-0 border-none"
-            ></select>
+            <div class="relative">
+              <select
+                id="deviceSelect"
+                class="h-7 appearance-none bg-slate-800/50 rounded-full pl-3 pr-8 text-xs text-slate-100 outline-none ring-0 border border-slate-700/50 hover:border-slate-600 focus:border-sky-500 transition cursor-pointer min-w-[140px]"
+              ></select>
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </div>
+            </div>
             <button
               id="refreshDeviceButton"
               class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100 active:scale-95 transition"
@@ -111,17 +118,17 @@
                   <span
                     class="text-[11px] uppercase tracking-wide text-slate-500"
                   >
-                    M3U8 预估带宽
+                    Connection Latency
                   </span>
                   <button
                     id="speedButton"
                     class="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1 text-[11px] text-slate-300 hover:bg-slate-800/90 transition"
                   >
-                    ⏱ 测速
+                    ⏱ Test
                   </button>
                 </div>
                 <div id="speedText" class="text-[11px] text-slate-400">
-                  暂未测速
+                  Not tested yet
                 </div>
               </div>
 
@@ -161,10 +168,17 @@
                 管理源
               </button>
             </div>
-            <select
-              id="sourceSelect"
-              class="w-full rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-100 outline-none ring-0 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40 transition"
-            ></select>
+            <div class="relative">
+              <select
+                id="sourceSelect"
+                class="w-full appearance-none rounded-full border border-slate-700 bg-slate-900/70 pl-3 pr-10 py-1.5 text-xs text-slate-100 outline-none ring-0 hover:border-slate-600 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/40 transition cursor-pointer"
+              ></select>
+              <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </div>
+            </div>
           </div>
 
           <!-- 频道搜索框 -->

@@ -194,29 +194,60 @@ function renderChannelGallery() {
     });
   }
 
+  // 检查是否有任何频道有图标
+  const hasAnyIcon = filteredChannels.some(c => c.icon);
+  // 根据是否有图标设置网格列数
+  channelGallery.className = hasAnyIcon
+    ? 'grid grid-cols-1 gap-2 flex-1 overflow-y-auto pr-1 min-h-0'
+    : 'grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1 min-h-0';
+
   filteredChannels.forEach((c) => {
     const isSelected =
       state.selectedChannel && state.selectedChannel.uri === c.uri;
     const card = document.createElement('button');
     card.type = 'button';
-    card.className =
-      'group flex flex-col items-start justify-center rounded-xl border px-3 py-2 text-left text-xs transition ' +
-      (isSelected
-        ? 'border-emerald-400/80 bg-emerald-900/20 text-emerald-100 shadow shadow-emerald-500/30'
-        : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800/80 hover:border-slate-500');
+
+    // 有图标时一行一个，横向布局；无图标时一行两个，纵向布局
+    if (hasAnyIcon) {
+      card.className =
+        'group flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-xs transition ' +
+        (isSelected
+          ? 'border-emerald-400/80 bg-emerald-900/20 text-emerald-100 shadow shadow-emerald-500/30'
+          : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800/80 hover:border-slate-500');
+    } else {
+      card.className =
+        'group flex flex-col items-start justify-center rounded-xl border px-3 py-2 text-left text-xs transition ' +
+        (isSelected
+          ? 'border-emerald-400/80 bg-emerald-900/20 text-emerald-100 shadow shadow-emerald-500/30'
+          : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800/80 hover:border-slate-500');
+    }
+
+    // 图标（仅当有图标时显示）
+    if (c.icon) {
+      const iconEl = document.createElement('img');
+      iconEl.className = 'w-10 h-10 rounded object-cover flex-shrink-0 bg-slate-800';
+      iconEl.src = c.icon;
+      iconEl.onerror = () => {
+        iconEl.style.display = 'none';
+      };
+      card.appendChild(iconEl);
+    }
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'flex-1 min-w-0';
 
     const titleEl = document.createElement('div');
-    titleEl.className = 'truncate w-full';
+    titleEl.className = 'truncate font-medium';
     titleEl.textContent = c.title;
 
     const uriEl = document.createElement('div');
     uriEl.className =
-      'mt-0.5 text-[10px] text-slate-500 group-hover:text-slate-400 truncate w-full';
+      'mt-0.5 text-[10px] text-slate-500 group-hover:text-slate-400 truncate';
     uriEl.textContent = c.uri;
 
     // 测速结果显示区域
     const speedEl = document.createElement('div');
-    speedEl.className = 'mt-1 text-[10px] speed-indicator';
+    speedEl.className = 'mt-0.5 text-[10px] speed-indicator';
     speedEl.dataset.uri = c.uri;
 
     const cachedSpeed = speedCache.get(c.uri);
@@ -235,9 +266,10 @@ function renderChannelGallery() {
       speedEl.className += ' text-slate-500';
     }
 
-    card.appendChild(titleEl);
-    card.appendChild(uriEl);
-    card.appendChild(speedEl);
+    contentEl.appendChild(titleEl);
+    contentEl.appendChild(uriEl);
+    contentEl.appendChild(speedEl);
+    card.appendChild(contentEl);
 
     // 点击选择频道
     card.addEventListener('click', () => {
@@ -363,46 +395,78 @@ async function preTestAllChannels() {
 async function previewCurrentChannel(channel) {
   const ch = channel || currentState.selectedChannel;
   if (!ch) {
-    statusText.textContent = '请先选择频道再预览';
+    statusText.textContent = 'Please select a channel first';
     return;
   }
 
   const url = ch.uri;
+  statusText.textContent = `Loading preview: ${ch.title}...`;
 
   try {
-    // 如果浏览器原生支持 HLS（macOS Safari 内核）
-    if (previewVideo.canPlayType('application/vnd.apple.mpegurl')) {
+    // Check if Hls is available
+    if (!window.Hls) {
+      statusText.textContent = 'HLS library not loaded, trying native playback...';
+      // Try native playback
       previewVideo.src = url;
       await previewVideo.play();
-      statusText.textContent = `正在本机预览：${ch.title}`;
+      statusText.textContent = `Playing: ${ch.title}`;
       return;
     }
 
-    // 使用 hls.js 适配更多环境
-    if (window.Hls && window.Hls.isSupported()) {
+    // Use hls.js for HLS playback
+    if (window.Hls.isSupported()) {
       if (window.__hlsInstance) {
         window.__hlsInstance.destroy();
       }
-      const hls = new window.Hls();
+      const hls = new window.Hls({
+        debug: false,
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
       window.__hlsInstance = hls;
+
+      // Handle errors
+      hls.on(window.Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          switch(data.type) {
+            case window.Hls.ErrorTypes.NETWORK_ERROR:
+              statusText.textContent = 'Network error, trying to recover...';
+              hls.startLoad();
+              break;
+            case window.Hls.ErrorTypes.MEDIA_ERROR:
+              statusText.textContent = 'Media error, trying to recover...';
+              hls.recoverMediaError();
+              break;
+            default:
+              statusText.textContent = `Preview error: ${data.details}`;
+              hls.destroy();
+              break;
+          }
+        }
+      });
+
       hls.loadSource(url);
       hls.attachMedia(previewVideo);
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
         previewVideo
           .play()
           .then(() => {
-            statusText.textContent = `正在本机预览：${ch.title}`;
+            statusText.textContent = `Playing: ${ch.title}`;
           })
           .catch((err) => {
-            statusText.textContent = `预览播放失败：${err.message || err}`;
+            statusText.textContent = `Play failed: ${err.message || err}`;
           });
       });
       return;
     }
 
-    statusText.textContent = '当前环境不支持 HLS 预览';
+    // Fallback to native if hls.js not supported but native might work
+    previewVideo.src = url;
+    await previewVideo.play();
+    statusText.textContent = `Playing: ${ch.title}`;
   } catch (e) {
-    statusText.textContent = `预览失败：${e.message || e}`;
+    statusText.textContent = `Preview failed: ${e.message || e}`;
+    console.error('Preview error:', e);
   }
 }
 
@@ -434,64 +498,39 @@ async function quickTestSpeed(channel, callback) {
 async function testChannelSpeed(channel) {
   const ch = channel || currentState.selectedChannel;
   if (!ch) {
-    speedText.textContent = '请先选择频道再测速';
+    speedText.textContent = 'Please select a channel first';
     return;
   }
 
   const url = ch.uri;
-  speedText.textContent = '正在测速中...';
+  speedText.textContent = 'Testing connection...';
 
   try {
-    // 第一步：测量首字节时延 (TTFB - Time To First Byte)
-    const ttfbStart = performance.now();
-    const headResponse = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-    const ttfbEnd = performance.now();
-    const latencyMs = (ttfbEnd - ttfbStart).toFixed(0);
+    // Measure latency only - this is what matters for channel switching
+    const start = performance.now();
+    const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    const latencyMs = (performance.now() - start).toFixed(0);
 
-    if (!headResponse.ok) {
-      speedText.textContent = `测速失败：HTTP ${headResponse.status}`;
+    if (!response.ok) {
+      speedText.textContent = `Test failed: HTTP ${response.status}`;
       return;
     }
 
-    // 第二步：测量下载速度
-    const downloadStart = performance.now();
-    const response = await fetch(url, { method: 'GET', cache: 'no-store' });
-
-    if (!response.ok || !response.body) {
-      speedText.textContent = `测速失败：HTTP ${response.status}`;
-      return;
+    // Show latency with quality indicator
+    let quality = '';
+    if (latencyMs < 100) {
+      quality = 'Excellent';
+    } else if (latencyMs < 300) {
+      quality = 'Good';
+    } else if (latencyMs < 800) {
+      quality = 'Fair';
+    } else {
+      quality = 'Poor';
     }
 
-    const reader = response.body.getReader();
-    let received = 0;
-    const maxBytes = 2 * 1024 * 1024; // 最多读取 2MB 估算带宽
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received >= maxBytes) {
-        try {
-          await reader.cancel();
-        } catch (_) {
-          // ignore
-        }
-        break;
-      }
-    }
-
-    const downloadDurationSeconds = (performance.now() - downloadStart) / 1000;
-    if (downloadDurationSeconds === 0) {
-      speedText.textContent = `时延: ${latencyMs}ms | 下载数据不足`;
-      return;
-    }
-
-    const mbps = (received * 8) / (1024 * 1024 * downloadDurationSeconds);
-    const receivedMB = received / (1024 * 1024);
-
-    speedText.textContent = `时延: ${latencyMs}ms | 下载: ${mbps.toFixed(2)} Mbps (${receivedMB.toFixed(2)} MB)`;
+    speedText.textContent = `Latency: ${latencyMs}ms (${quality})`;
   } catch (e) {
-    speedText.textContent = `测速失败：${e.message || e}`;
+    speedText.textContent = `Test failed: ${e.message || e}`;
   }
 }
 
