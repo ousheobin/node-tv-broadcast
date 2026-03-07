@@ -1,5 +1,9 @@
 # TV Broadcast
 
+[![Node.js CI](https://github.com/ousheobin/node-tv-broadcast/actions/workflows/node.js.yml/badge.svg)](https://github.com/ousheobin/node-tv-broadcast/actions/workflows/node.js.yml)
+
+A client that helps to broadcast m3u8 live stream to TV via DLNA
+
 A desktop application for broadcasting m3u8 live streams to TV via DLNA, supporting both command-line and graphical interfaces.
 
 ## Features
