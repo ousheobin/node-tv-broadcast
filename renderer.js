@@ -3,14 +3,25 @@
 const deviceSelect = document.getElementById('deviceSelect');
 const channelGallery = document.getElementById('channelGallery');
 const castButton = document.getElementById('castButton');
-const retryButton = document.getElementById('retryButton');
+const refreshDeviceButton = document.getElementById('refreshDeviceButton');
+const refreshChannelButton = document.getElementById('refreshChannelButton');
 const statusText = document.getElementById('statusText');
 const previewVideo = document.getElementById('previewVideo');
 const previewButton = document.getElementById('previewButton');
 const speedButton = document.getElementById('speedButton');
 const speedText = document.getElementById('speedText');
-const m3u8Input = document.getElementById('m3u8Input');
-const m3u8SaveButton = document.getElementById('m3u8SaveButton');
+const sourceSelect = document.getElementById('sourceSelect');
+const manageSourceButton = document.getElementById('manageSourceButton');
+const channelSearch = document.getElementById('channelSearch');
+const sortBySpeedButton = document.getElementById('sortBySpeedButton');
+
+// 源管理弹窗元素
+const sourceModal = document.getElementById('sourceModal');
+const closeSourceModal = document.getElementById('closeSourceModal');
+const sourceList = document.getElementById('sourceList');
+const newSourceName = document.getElementById('newSourceName');
+const newSourceUrl = document.getElementById('newSourceUrl');
+const addSourceButton = document.getElementById('addSourceButton');
 
 let currentState = {
   devices: [],
@@ -19,8 +30,98 @@ let currentState = {
   selectedChannel: null,
 };
 let currentConfig = {
-  m3u8Url: '',
+  sources: [],
+  currentSourceId: null,
 };
+let searchKeyword = '';
+let speedCache = new Map(); // 缓存测速结果
+let isSortedBySpeed = false; // 是否按速度排序
+
+// 渲染源选择下拉框
+function renderSourceSelect() {
+  if (!sourceSelect) return;
+  sourceSelect.innerHTML = '';
+  currentConfig.sources.forEach((s) => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.name;
+    if (s.id === currentConfig.currentSourceId) {
+      opt.selected = true;
+    }
+    sourceSelect.appendChild(opt);
+  });
+}
+
+// 渲染源管理弹窗列表
+function renderSourceList() {
+  if (!sourceList) return;
+  sourceList.innerHTML = '';
+  currentConfig.sources.forEach((s) => {
+    const item = document.createElement('div');
+    item.className =
+      'flex items-center justify-between p-2 rounded-lg border border-slate-700 bg-slate-800/50';
+
+    const info = document.createElement('div');
+    info.className = 'flex-1 min-w-0';
+    const name = document.createElement('div');
+    name.className = 'text-xs font-medium text-slate-200 truncate';
+    name.textContent = s.name;
+    const url = document.createElement('div');
+    url.className = 'text-[10px] text-slate-500 truncate';
+    url.textContent = s.url;
+    info.appendChild(name);
+    info.appendChild(url);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-1 ml-2';
+
+    // 当前源标记
+    if (s.id === currentConfig.currentSourceId) {
+      const current = document.createElement('span');
+      current.className = 'text-[10px] text-emerald-400 px-1';
+      current.textContent = '当前';
+      actions.appendChild(current);
+    }
+
+    // 删除按钮（至少保留一个）
+    if (currentConfig.sources.length > 1) {
+      const delBtn = document.createElement('button');
+      delBtn.className =
+        'text-[10px] text-rose-400 hover:text-rose-300 px-2 py-1 transition';
+      delBtn.textContent = '删除';
+      delBtn.addEventListener('click', async () => {
+        await window.broadcastAPI.removeSource(s.id);
+        // 刷新配置
+        const config = await window.broadcastAPI.getConfig();
+        currentConfig = config;
+        renderSourceSelect();
+        renderSourceList();
+      });
+      actions.appendChild(delBtn);
+    }
+
+    item.appendChild(info);
+    item.appendChild(actions);
+    sourceList.appendChild(item);
+  });
+}
+
+// 打开弹窗
+function openSourceModal() {
+  if (sourceModal) {
+    sourceModal.classList.remove('hidden');
+    sourceModal.classList.add('flex');
+    renderSourceList();
+  }
+}
+
+// 关闭弹窗
+function closeSourceModalFn() {
+  if (sourceModal) {
+    sourceModal.classList.add('hidden');
+    sourceModal.classList.remove('flex');
+  }
+}
 
 function renderState(state) {
   currentState = state;
@@ -46,49 +147,217 @@ function renderState(state) {
     });
   }
 
-  // 渲染频道 Gallery
+  // 渲染频道 Gallery（支持搜索过滤）
+  renderChannelGallery();
+}
+
+function renderChannelGallery() {
+  const state = currentState;
   channelGallery.innerHTML = '';
+
   if (!state.channels || state.channels.length === 0) {
     const empty = document.createElement('div');
     empty.className =
       'col-span-2 text-[12px] text-slate-500 py-4 text-center border border-dashed border-slate-700 rounded-xl';
     empty.textContent = '正在加载频道列表...';
     channelGallery.appendChild(empty);
-  } else {
-    state.channels.forEach((c) => {
-      const isSelected =
-        state.selectedChannel && state.selectedChannel.uri === c.uri;
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className =
-        'group flex flex-col items-start justify-center rounded-xl border px-3 py-2 text-left text-xs transition ' +
-        (isSelected
-          ? 'border-emerald-400/80 bg-emerald-900/20 text-emerald-100 shadow shadow-emerald-500/30'
-          : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800/80 hover:border-slate-500');
-      const titleEl = document.createElement('div');
-      titleEl.className = 'truncate w-full';
-      titleEl.textContent = c.title;
-      const uriEl = document.createElement('div');
-      uriEl.className =
-        'mt-0.5 text-[10px] text-slate-500 group-hover:text-slate-400 truncate w-full';
-      uriEl.textContent = c.uri;
-      card.appendChild(titleEl);
-      card.appendChild(uriEl);
-      card.addEventListener('click', () => {
-        window.broadcastAPI.selectChannel(c.uri);
-        // 右侧选择频道后，左侧自动预览并测速
-        previewCurrentChannel(c);
-        testChannelSpeed(c);
-      });
-      channelGallery.appendChild(card);
+    return;
+  }
+
+  // 过滤频道
+  let filteredChannels = searchKeyword
+    ? state.channels.filter((c) =>
+        c.title.toLowerCase().includes(searchKeyword.toLowerCase())
+      )
+    : [...state.channels];
+
+  if (filteredChannels.length === 0) {
+    const empty = document.createElement('div');
+    empty.className =
+      'col-span-2 text-[12px] text-slate-500 py-4 text-center border border-dashed border-slate-700 rounded-xl';
+    empty.textContent = '未找到匹配的频道';
+    channelGallery.appendChild(empty);
+    return;
+  }
+
+  // 按速度排序
+  if (isSortedBySpeed) {
+    filteredChannels.sort((a, b) => {
+      const speedA = speedCache.get(a.uri);
+      const speedB = speedCache.get(b.uri);
+      const getMs = (s) => {
+        if (!s || s === '测速中...' || s === '等待测速') return Infinity;
+        const match = s.match(/(\d+)ms/);
+        return match ? parseInt(match[1]) : Infinity;
+      };
+      return getMs(speedA) - getMs(speedB);
     });
   }
+
+  filteredChannels.forEach((c) => {
+    const isSelected =
+      state.selectedChannel && state.selectedChannel.uri === c.uri;
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className =
+      'group flex flex-col items-start justify-center rounded-xl border px-3 py-2 text-left text-xs transition ' +
+      (isSelected
+        ? 'border-emerald-400/80 bg-emerald-900/20 text-emerald-100 shadow shadow-emerald-500/30'
+        : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800/80 hover:border-slate-500');
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'truncate w-full';
+    titleEl.textContent = c.title;
+
+    const uriEl = document.createElement('div');
+    uriEl.className =
+      'mt-0.5 text-[10px] text-slate-500 group-hover:text-slate-400 truncate w-full';
+    uriEl.textContent = c.uri;
+
+    // 测速结果显示区域
+    const speedEl = document.createElement('div');
+    speedEl.className = 'mt-1 text-[10px] speed-indicator';
+    speedEl.dataset.uri = c.uri;
+
+    const cachedSpeed = speedCache.get(c.uri);
+    if (cachedSpeed) {
+      speedEl.textContent = cachedSpeed;
+      const match = cachedSpeed.match(/(\d+)ms/);
+      if (match) {
+        const ms = parseInt(match[1]);
+        speedEl.className +=
+          ms < 300 ? ' text-emerald-400' : ms < 800 ? ' text-amber-400' : ' text-rose-400';
+      } else {
+        speedEl.className += ' text-slate-400';
+      }
+    } else {
+      speedEl.textContent = '等待测速';
+      speedEl.className += ' text-slate-500';
+    }
+
+    card.appendChild(titleEl);
+    card.appendChild(uriEl);
+    card.appendChild(speedEl);
+
+    // 点击选择频道
+    card.addEventListener('click', () => {
+      window.broadcastAPI.selectChannel(c.uri);
+      previewCurrentChannel(c);
+      testChannelSpeed(c);
+    });
+
+    channelGallery.appendChild(card);
+  });
 
   const deviceName = state.selectedDevice ? state.selectedDevice.name : '未选择';
   const channelName = state.selectedChannel
     ? state.selectedChannel.title
     : '未选择';
   statusText.textContent = `当前设备: ${deviceName} | 当前频道: ${channelName}`;
+}
+
+// 批量预测速
+async function preTestAllChannels() {
+  if (!currentState.channels || currentState.channels.length === 0) return;
+
+  const channels = currentState.channels;
+  statusText.textContent = `开始预测速 ${channels.length} 个频道...`;
+
+  // 提高并发到 30 个，只测时延不会占用太多资源
+  const concurrency = 30;
+  let tested = 0;
+
+  // 单个频道测速，带超时控制
+  async function testOneChannel(ch) {
+    if (speedCache.has(ch.uri)) {
+      tested++;
+      return;
+    }
+
+    // 3秒超时控制
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 3000)
+    );
+
+    try {
+      await Promise.race([
+        new Promise((resolve) => {
+          quickTestSpeed(ch, (result) => {
+            speedCache.set(ch.uri, result);
+            tested++;
+            // 更新对应卡片的显示
+            const speedEl = document.querySelector(
+              `[data-uri="${CSS.escape(ch.uri)}"]`
+            );
+            if (speedEl) {
+              speedEl.textContent = result;
+              const match = result.match(/(\d+)ms/);
+              if (match) {
+                const ms = parseInt(match[1]);
+                speedEl.className =
+                  'mt-1 text-[10px] speed-indicator ' +
+                  (ms < 300
+                    ? 'text-emerald-400'
+                    : ms < 800
+                    ? 'text-amber-400'
+                    : 'text-rose-400');
+              }
+            }
+            resolve();
+          });
+        }),
+        timeoutPromise,
+      ]);
+    } catch (e) {
+      // 超时或失败
+      speedCache.set(ch.uri, '超时');
+      tested++;
+      const speedEl = document.querySelector(
+        `[data-uri="${CSS.escape(ch.uri)}"]`
+      );
+      if (speedEl) {
+        speedEl.textContent = '超时';
+        speedEl.className = 'mt-1 text-[10px] speed-indicator text-slate-500';
+      }
+    }
+
+    // 每 10 个更新一次状态栏
+    if (tested % 10 === 0 || tested === channels.length) {
+      statusText.textContent = `预测速中... ${tested}/${channels.length}`;
+    }
+  }
+
+  // 分批处理，但不用 await Promise.all 阻塞
+  for (let i = 0; i < channels.length; i += concurrency) {
+    const batch = channels.slice(i, i + concurrency);
+    // 并发执行，但不等待全部完成，超时的会自动标记
+    batch.forEach((ch) => testOneChannel(ch));
+    // 小延迟让出主线程
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  // 等待所有测速完成（最多等 3 秒，超过 3 秒的延迟没法看）
+  let waitCount = 0;
+  while (tested < channels.length && waitCount < 30) {
+    await new Promise((r) => setTimeout(r, 100));
+    waitCount++;
+  }
+
+  // 标记未完成的为超时
+  channels.forEach((ch) => {
+    if (!speedCache.has(ch.uri)) {
+      speedCache.set(ch.uri, '超时');
+      const speedEl = document.querySelector(
+        `[data-uri="${CSS.escape(ch.uri)}"]`
+      );
+      if (speedEl) {
+        speedEl.textContent = '超时';
+        speedEl.className = 'mt-1 text-[10px] speed-indicator text-slate-500';
+      }
+    }
+  });
+
+  statusText.textContent = `预测速完成，可按速度排序`;
 }
 
 async function previewCurrentChannel(channel) {
@@ -137,6 +406,31 @@ async function previewCurrentChannel(channel) {
   }
 }
 
+// 快速测速，只测时延（HEAD请求）
+async function quickTestSpeed(channel, callback) {
+  const url = channel.uri;
+  try {
+    const start = performance.now();
+    const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    const latencyMs = (performance.now() - start).toFixed(0);
+
+    if (!response.ok) {
+      callback('无法连接');
+      return;
+    }
+
+    if (latencyMs < 300) {
+      callback(`${latencyMs}ms ⚡`);
+    } else if (latencyMs < 800) {
+      callback(`${latencyMs}ms ✓`);
+    } else {
+      callback(`${latencyMs}ms ⚠`);
+    }
+  } catch (e) {
+    callback('超时');
+  }
+}
+
 async function testChannelSpeed(channel) {
   const ch = channel || currentState.selectedChannel;
   if (!ch) {
@@ -148,7 +442,19 @@ async function testChannelSpeed(channel) {
   speedText.textContent = '正在测速中...';
 
   try {
-    const start = performance.now();
+    // 第一步：测量首字节时延 (TTFB - Time To First Byte)
+    const ttfbStart = performance.now();
+    const headResponse = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    const ttfbEnd = performance.now();
+    const latencyMs = (ttfbEnd - ttfbStart).toFixed(0);
+
+    if (!headResponse.ok) {
+      speedText.textContent = `测速失败：HTTP ${headResponse.status}`;
+      return;
+    }
+
+    // 第二步：测量下载速度
+    const downloadStart = performance.now();
     const response = await fetch(url, { method: 'GET', cache: 'no-store' });
 
     if (!response.ok || !response.body) {
@@ -158,7 +464,7 @@ async function testChannelSpeed(channel) {
 
     const reader = response.body.getReader();
     let received = 0;
-    const maxBytes = 3 * 1024 * 1024; // 最多读取 3MB 估算带宽
+    const maxBytes = 2 * 1024 * 1024; // 最多读取 2MB 估算带宽
 
     while (true) {
       const { done, value } = await reader.read();
@@ -174,17 +480,16 @@ async function testChannelSpeed(channel) {
       }
     }
 
-    const durationSeconds = (performance.now() - start) / 1000;
-    if (durationSeconds === 0) {
-      speedText.textContent = '测速数据不足';
+    const downloadDurationSeconds = (performance.now() - downloadStart) / 1000;
+    if (downloadDurationSeconds === 0) {
+      speedText.textContent = `时延: ${latencyMs}ms | 下载数据不足`;
       return;
     }
 
-    const mbps = (received * 8) / (1024 * 1024 * durationSeconds);
-    speedText.textContent = `约 ${mbps.toFixed(2)} Mbps（基于 ${(
-      received /
-      (1024 * 1024)
-    ).toFixed(2)} MB / ${durationSeconds.toFixed(2)} s）`;
+    const mbps = (received * 8) / (1024 * 1024 * downloadDurationSeconds);
+    const receivedMB = received / (1024 * 1024);
+
+    speedText.textContent = `时延: ${latencyMs}ms | 下载: ${mbps.toFixed(2)} Mbps (${receivedMB.toFixed(2)} MB)`;
   } catch (e) {
     speedText.textContent = `测速失败：${e.message || e}`;
   }
@@ -202,14 +507,30 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.broadcastAPI.getState(),
     window.broadcastAPI.getConfig(),
   ]);
+
+  // 保存初始频道数量用于判断是否需要自动测速
+  const initialChannelCount = initialState.channels?.length || 0;
+
   renderState(initialState);
-  if (config && config.m3u8Url && m3u8Input) {
+
+  // 加载配置
+  if (config && config.sources) {
     currentConfig = config;
-    m3u8Input.value = config.m3u8Url;
+    renderSourceSelect();
+  }
+
+  // 如果初始就有频道，立即开始预测速
+  if (initialChannelCount > 0) {
+    setTimeout(() => preTestAllChannels(), 500);
   }
 
   window.broadcastAPI.onStateUpdate((newState) => {
+    const hadChannels = currentState.channels && currentState.channels.length > 0;
     renderState(newState);
+    // 如果频道列表刚加载完成（从无到有），自动开始预测速
+    if (!hadChannels && newState.channels && newState.channels.length > 0) {
+      setTimeout(() => preTestAllChannels(), 500);
+    }
   });
 
   window.broadcastAPI.onCastResult((result) => {
@@ -231,9 +552,16 @@ castButton.addEventListener('click', () => {
   window.broadcastAPI.startCast();
 });
 
-retryButton.addEventListener('click', () => {
-  window.broadcastAPI.retrySearch();
-  statusText.textContent = '正在重新搜索设备并刷新频道列表...';
+// 刷新 DLNA 设备
+refreshDeviceButton.addEventListener('click', () => {
+  window.broadcastAPI.refreshDevices();
+  statusText.textContent = '正在重新搜索 DLNA 设备...';
+});
+
+// 刷新频道列表
+refreshChannelButton.addEventListener('click', () => {
+  window.broadcastAPI.refreshChannels();
+  statusText.textContent = '正在重新加载频道列表...';
 });
 
 previewButton.addEventListener('click', () => {
@@ -244,15 +572,78 @@ speedButton.addEventListener('click', () => {
   testChannelSpeed();
 });
 
-if (m3u8SaveButton && m3u8Input) {
-  m3u8SaveButton.addEventListener('click', async () => {
-    const newUrl = m3u8Input.value.trim();
-    if (!newUrl) {
-      statusText.textContent = 'm3u8 地址不能为空';
+// 频道搜索功能
+if (channelSearch) {
+  channelSearch.addEventListener('input', (e) => {
+    searchKeyword = e.target.value.trim();
+    renderChannelGallery();
+  });
+}
+
+// 按速度排序
+if (sortBySpeedButton) {
+  sortBySpeedButton.addEventListener('click', () => {
+    isSortedBySpeed = !isSortedBySpeed;
+    sortBySpeedButton.textContent = isSortedBySpeed ? '按速度排序 ↑' : '按速度排序 ↓';
+    renderChannelGallery();
+  });
+}
+
+// 源选择切换
+if (sourceSelect) {
+  sourceSelect.addEventListener('change', async (e) => {
+    const sourceId = e.target.value;
+    if (sourceId && sourceId !== currentConfig.currentSourceId) {
+      statusText.textContent = '正在切换源...';
+      await window.broadcastAPI.switchSource(sourceId);
+      currentConfig.currentSourceId = sourceId;
+      renderSourceSelect();
+    }
+  });
+}
+
+// 打开源管理弹窗
+if (manageSourceButton) {
+  manageSourceButton.addEventListener('click', openSourceModal);
+}
+
+// 关闭源管理弹窗
+if (closeSourceModal) {
+  closeSourceModal.addEventListener('click', closeSourceModalFn);
+}
+
+// 点击弹窗背景关闭
+if (sourceModal) {
+  sourceModal.addEventListener('click', (e) => {
+    if (e.target === sourceModal) {
+      closeSourceModalFn();
+    }
+  });
+}
+
+// 添加新源
+if (addSourceButton) {
+  addSourceButton.addEventListener('click', async () => {
+    const name = newSourceName.value.trim();
+    const url = newSourceUrl.value.trim();
+    if (!name || !url) {
+      statusText.textContent = '请填写源名称和 URL';
       return;
     }
-    await window.broadcastAPI.updateM3u8Url(newUrl);
-    statusText.textContent = '已更新 m3u8 配置并重新加载频道';
+    const result = await window.broadcastAPI.addSource({ name, url });
+    if (result.success) {
+      // 刷新配置
+      const config = await window.broadcastAPI.getConfig();
+      currentConfig = config;
+      renderSourceSelect();
+      renderSourceList();
+      // 清空输入
+      newSourceName.value = '';
+      newSourceUrl.value = '';
+      statusText.textContent = '源已添加';
+    } else {
+      statusText.textContent = result.error || '添加失败';
+    }
   });
 }
 

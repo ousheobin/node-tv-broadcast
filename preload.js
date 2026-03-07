@@ -7,8 +7,12 @@ contextBridge.exposeInMainWorld('broadcastAPI', {
   selectChannel: (channelUri) => ipcRenderer.invoke('state:selectChannel', channelUri),
   startCast: () => ipcRenderer.invoke('cast:start'),
   retrySearch: () => ipcRenderer.invoke('search:retry'),
+  refreshDevices: () => ipcRenderer.invoke('devices:refresh'),
+  refreshChannels: () => ipcRenderer.invoke('channels:refresh'),
   getConfig: () => ipcRenderer.invoke('config:get'),
-  updateM3u8Url: (m3u8Url) => ipcRenderer.invoke('config:updateM3u8Url', m3u8Url),
+  addSource: (source) => ipcRenderer.invoke('config:addSource', source),
+  removeSource: (sourceId) => ipcRenderer.invoke('config:removeSource', sourceId),
+  switchSource: (sourceId) => ipcRenderer.invoke('config:switchSource', sourceId),
   onStateUpdate: (callback) => {
     ipcRenderer.on('state:update', (_event, newState) => {
       callback(newState);

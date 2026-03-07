@@ -1,18 +1,69 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const MediaRendererClient = require('upnp-mediarenderer-client');
-// electron-store 从 v10 开始是 ESM 默认导出，这里通过 .default 获取构造函数
-const Store = require('electron-store').default;
 
 const UpnpSearcher = require('./component/dlna/SSDPSearcher');
 const M3U8Client = require('./component/playlist/M3U8Fetcher');
 
 let mainWindow = null;
-const store = new Store({
-  defaults: {
-    m3u8Url: 'https://live.fanmingming.com/tv/m3u/global.m3u',
-  },
-});
+
+// 配置文件路径 ~/.tvbBoardcast/settings.json
+const configDir = path.join(os.homedir(), '.tvbBoardcast');
+const configFile = path.join(configDir, 'settings.json');
+
+// 默认配置（无默认源）
+const defaultConfig = {
+  sources: [],
+  currentSourceId: null,
+};
+
+// 读取配置
+function loadConfig() {
+  try {
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    if (fs.existsSync(configFile)) {
+      const data = fs.readFileSync(configFile, 'utf-8');
+      const config = JSON.parse(data);
+      // 合并默认配置
+      return { ...defaultConfig, ...config };
+    }
+    // 首次运行，创建默认配置
+    saveConfig(defaultConfig);
+    return defaultConfig;
+  } catch (e) {
+    console.error('读取配置失败:', e);
+    return defaultConfig;
+  }
+}
+
+// 保存配置
+function saveConfig(config) {
+  try {
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    fs.writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf-8');
+    return true;
+  } catch (e) {
+    console.error('保存配置失败:', e);
+    return false;
+  }
+}
+
+// 全局配置对象
+let appConfig = loadConfig();
+
+// 获取当前启用的 m3u8 URL
+function getCurrentM3u8Url() {
+  const currentSource = appConfig.sources.find(
+    (s) => s.id === appConfig.currentSourceId && s.enabled
+  );
+  return currentSource ? currentSource.url : appConfig.sources[0]?.url;
+}
 
 // 状态数据在主进程里维护
 const state = {
@@ -26,6 +77,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 600,
+    minWidth: 800,
+    minHeight: 500,
+    resizable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -69,13 +123,15 @@ function initBackend() {
   });
   upnpSearcher.doSearch();
 
-  // 拉取频道列表（使用可配置的 m3u8 URL）
-  const m3uUrl = store.get('m3u8Url');
-  const m3u8Client = new M3U8Client(m3uUrl);
-  m3u8Client.fetch((channels) => {
-    state.channels = channels || [];
-    broadcastState();
-  });
+  // 拉取频道列表（使用当前选中的 m3u8 URL）
+  const m3uUrl = getCurrentM3u8Url();
+  if (m3uUrl) {
+    const m3u8Client = new M3U8Client(m3uUrl);
+    m3u8Client.fetch((channels) => {
+      state.channels = channels || [];
+      broadcastState();
+    });
+  }
 }
 
 // 处理投屏
@@ -156,27 +212,97 @@ function setupIpc() {
     initBackend();
   });
 
-  // 配置相关：获取当前配置
-  ipcMain.handle('config:get', () => {
-    return {
-      m3u8Url: store.get('m3u8Url'),
-    };
+  // 单独刷新 DLNA 设备
+  ipcMain.handle('devices:refresh', () => {
+    state.devices = [];
+    state.selectedDevice = null;
+    broadcastState();
+    // 重新搜索设备
+    const upnpSearcher = new UpnpSearcher((deviceInfo) => {
+      if (state.devices.find((d) => d.address === deviceInfo.address)) {
+        return;
+      }
+      state.devices.push(deviceInfo);
+      if (!state.selectedDevice) {
+        state.selectedDevice = deviceInfo;
+      }
+      broadcastState();
+    });
+    upnpSearcher.doSearch();
   });
 
-  // 更新 m3u8 URL 配置并重新加载频道列表
-  ipcMain.handle('config:updateM3u8Url', (_event, newUrl) => {
-    if (typeof newUrl === 'string' && newUrl.trim().length > 0) {
-      store.set('m3u8Url', newUrl.trim());
-      // 只刷新频道列表，不清空设备
-      state.channels = [];
-      state.selectedChannel = null;
-      broadcastState();
-      const m3u8Client = new M3U8Client(newUrl.trim());
+  // 单独刷新频道列表
+  ipcMain.handle('channels:refresh', () => {
+    state.channels = [];
+    state.selectedChannel = null;
+    broadcastState();
+    // 重新拉取频道
+    const m3uUrl = getCurrentM3u8Url();
+    if (m3uUrl) {
+      const m3u8Client = new M3U8Client(m3uUrl);
       m3u8Client.fetch((channels) => {
         state.channels = channels || [];
         broadcastState();
       });
     }
+  });
+
+  // 配置相关：获取当前配置
+  ipcMain.handle('config:get', () => {
+    return {
+      sources: appConfig.sources,
+      currentSourceId: appConfig.currentSourceId,
+    };
+  });
+
+  // 添加 m3u8 源
+  ipcMain.handle('config:addSource', (_event, source) => {
+    if (source && source.name && source.url) {
+      const newSource = {
+        id: Date.now().toString(),
+        name: source.name,
+        url: source.url,
+        enabled: true,
+      };
+      appConfig.sources.push(newSource);
+      saveConfig(appConfig);
+      return { success: true, source: newSource };
+    }
+    return { success: false, error: '参数无效' };
+  });
+
+  // 删除 m3u8 源
+  ipcMain.handle('config:removeSource', (_event, sourceId) => {
+    if (appConfig.sources.length <= 1) {
+      return { success: false, error: '至少保留一个源' };
+    }
+    appConfig.sources = appConfig.sources.filter((s) => s.id !== sourceId);
+    // 如果删除的是当前选中的，切换到第一个
+    if (appConfig.currentSourceId === sourceId) {
+      appConfig.currentSourceId = appConfig.sources[0]?.id;
+    }
+    saveConfig(appConfig);
+    return { success: true };
+  });
+
+  // 切换当前源
+  ipcMain.handle('config:switchSource', (_event, sourceId) => {
+    const source = appConfig.sources.find((s) => s.id === sourceId);
+    if (source) {
+      appConfig.currentSourceId = sourceId;
+      saveConfig(appConfig);
+      // 刷新频道列表
+      state.channels = [];
+      state.selectedChannel = null;
+      broadcastState();
+      const m3u8Client = new M3U8Client(source.url);
+      m3u8Client.fetch((channels) => {
+        state.channels = channels || [];
+        broadcastState();
+      });
+      return { success: true };
+    }
+    return { success: false, error: '源不存在' };
   });
 }
 
