@@ -7,13 +7,18 @@ const refreshDeviceButton = document.getElementById('refreshDeviceButton');
 const refreshChannelButton = document.getElementById('refreshChannelButton');
 const statusText = document.getElementById('statusText');
 const previewVideo = document.getElementById('previewVideo');
-const previewButton = document.getElementById('previewButton');
 const speedButton = document.getElementById('speedButton');
 const speedText = document.getElementById('speedText');
 const sourceSelect = document.getElementById('sourceSelect');
 const manageSourceButton = document.getElementById('manageSourceButton');
 const channelSearch = document.getElementById('channelSearch');
 const sortBySpeedButton = document.getElementById('sortBySpeedButton');
+
+// Real-time stats elements
+const statLatency = document.getElementById('statLatency');
+const statBitrate = document.getElementById('statBitrate');
+const statResolution = document.getElementById('statResolution');
+const statDownload = document.getElementById('statDownload');
 
 // 源管理弹窗元素
 const sourceModal = document.getElementById('sourceModal');
@@ -164,11 +169,14 @@ function renderChannelGallery() {
     return;
   }
 
-  // 过滤频道
+  // 过滤频道（搜索tvgName和title）
   let filteredChannels = searchKeyword
-    ? state.channels.filter((c) =>
-        c.title.toLowerCase().includes(searchKeyword.toLowerCase())
-      )
+    ? state.channels.filter((c) => {
+        const searchLower = searchKeyword.toLowerCase();
+        const nameMatch = (c.tvgName || '').toLowerCase().includes(searchLower);
+        const titleMatch = c.title.toLowerCase().includes(searchLower);
+        return nameMatch || titleMatch;
+      })
     : [...state.channels];
 
   if (filteredChannels.length === 0) {
@@ -238,12 +246,23 @@ function renderChannelGallery() {
 
     const titleEl = document.createElement('div');
     titleEl.className = 'truncate font-medium';
-    titleEl.textContent = c.title;
+    // GUI优先展示tvgName，如果没有则使用title
+    titleEl.textContent = c.tvgName || c.title;
 
-    const uriEl = document.createElement('div');
-    uriEl.className =
+    // 第二行：优先展示地区和类目，都没有则展示URL
+    const metaEl = document.createElement('div');
+    metaEl.className =
       'mt-0.5 text-[10px] text-slate-500 group-hover:text-slate-400 truncate';
-    uriEl.textContent = c.uri;
+
+    const hasMeta = c.country || c.group;
+    if (hasMeta) {
+      const parts = [];
+      if (c.country) parts.push(c.country);
+      if (c.group) parts.push(c.group);
+      metaEl.textContent = parts.join(' · ');
+    } else {
+      metaEl.textContent = c.uri;
+    }
 
     // 测速结果显示区域
     const speedEl = document.createElement('div');
@@ -267,14 +286,14 @@ function renderChannelGallery() {
     }
 
     contentEl.appendChild(titleEl);
-    contentEl.appendChild(uriEl);
+    contentEl.appendChild(metaEl);
     contentEl.appendChild(speedEl);
     card.appendChild(contentEl);
 
     // 点击选择频道
     card.addEventListener('click', () => {
       window.broadcastAPI.selectChannel(c.uri);
-      previewCurrentChannel(c);
+      startPreview(c);
       testChannelSpeed(c);
     });
 
@@ -389,56 +408,128 @@ async function preTestAllChannels() {
     }
   });
 
-  statusText.textContent = `预测速完成，可按速度排序`;
+  statusText.textContent = `测速完成，可按速度排序`;
 }
 
-async function previewCurrentChannel(channel) {
-  const ch = channel || currentState.selectedChannel;
-  if (!ch) {
-    statusText.textContent = 'Please select a channel first';
-    return;
+// Update real-time stats display
+function updateStats(stats) {
+  if (stats.latency !== undefined) {
+    statLatency.textContent = stats.latency + 'ms';
   }
+  if (stats.bitrate !== undefined) {
+    statBitrate.textContent = stats.bitrate + ' Mbps';
+  }
+  if (stats.resolution !== undefined) {
+    statResolution.textContent = stats.resolution;
+  }
+  if (stats.download !== undefined) {
+    statDownload.textContent = stats.download + ' MB/s';
+  }
+}
 
-  const url = ch.uri;
-  statusText.textContent = `Loading preview: ${ch.title}...`;
+function clearStats() {
+  statLatency.textContent = '-';
+  statBitrate.textContent = '-';
+  statResolution.textContent = '-';
+  statDownload.textContent = '-';
+}
+
+// Start preview with hls.js and real-time stats
+async function startPreview(channel) {
+  if (!channel) return;
+
+  const url = channel.uri;
+  clearStats();
+  statusText.textContent = `正在加载: ${channel.tvgName || channel.title}...`;
 
   try {
-    // Check if Hls is available
-    if (!window.Hls) {
-      statusText.textContent = 'HLS library not loaded, trying native playback...';
-      // Try native playback
-      previewVideo.src = url;
-      await previewVideo.play();
-      statusText.textContent = `Playing: ${ch.title}`;
-      return;
+    // Clean up existing hls instance
+    if (window.__hlsInstance) {
+      window.__hlsInstance.destroy();
+      window.__hlsInstance = null;
     }
 
+    // Reset video element
+    previewVideo.pause();
+    previewVideo.removeAttribute('src');
+    previewVideo.load();
+
     // Use hls.js for HLS playback
-    if (window.Hls.isSupported()) {
-      if (window.__hlsInstance) {
-        window.__hlsInstance.destroy();
-      }
+    if (window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: true,
+        lowLatencyMode: false,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 5,
+        backBufferLength: 30,
+        fragLoadingTimeOut: 20000,
+        fragLoadingMaxRetry: 2,
+        manifestLoadingTimeOut: 10000,
+        levelLoadingTimeOut: 10000,
       });
       window.__hlsInstance = hls;
+
+      // Track download stats
+      let lastLoadedBytes = 0;
+      let lastLoadTime = performance.now();
+
+      hls.on(window.Hls.Events.FRAG_LOADED, (event, data) => {
+        const now = performance.now();
+        const fragLoaded = data.frag.stats.loaded;
+        const fragDuration = (now - lastLoadTime) / 1000;
+
+        // Calculate speed based on this fragment's size and load time
+        if (fragDuration > 0 && fragLoaded > 0) {
+          const bytesPerSecond = fragLoaded / fragDuration;
+          const mbps = (bytesPerSecond * 8 / 1000000).toFixed(1);
+          const mbs = (bytesPerSecond / 1000000).toFixed(1);
+          updateStats({ download: mbs, bitrate: mbps });
+        }
+
+        lastLoadedBytes += fragLoaded;
+        lastLoadTime = now;
+      });
+
+      // Track level/quality changes
+      hls.on(window.Hls.Events.LEVEL_SWITCHED, (event, data) => {
+        const level = hls.levels[data.level];
+        if (level) {
+          const resolution = level.width + 'x' + level.height;
+          updateStats({ resolution });
+        }
+      });
+
+      // Track buffer latency (time from live edge)
+      setInterval(() => {
+        if (hls && previewVideo) {
+          // Get current playback position vs live edge
+          const currentTime = previewVideo.currentTime;
+          const bufferedEnd = hls.liveSyncPosition || currentTime;
+
+          if (bufferedEnd && currentTime) {
+            const bufferLatency = ((bufferedEnd - currentTime) * 1000).toFixed(0);
+            updateStats({ latency: bufferLatency });
+          }
+        }
+      }, 1000);
 
       // Handle errors
       hls.on(window.Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           switch(data.type) {
             case window.Hls.ErrorTypes.NETWORK_ERROR:
-              statusText.textContent = 'Network error, trying to recover...';
+              statusText.textContent = '网络错误，正在恢复...';
               hls.startLoad();
               break;
             case window.Hls.ErrorTypes.MEDIA_ERROR:
-              statusText.textContent = 'Media error, trying to recover...';
+              statusText.textContent = '媒体错误，正在恢复...';
               hls.recoverMediaError();
               break;
             default:
-              statusText.textContent = `Preview error: ${data.details}`;
+              statusText.textContent = `错误: ${data.details}`;
               hls.destroy();
               break;
           }
@@ -448,24 +539,27 @@ async function previewCurrentChannel(channel) {
       hls.loadSource(url);
       hls.attachMedia(previewVideo);
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-        previewVideo
-          .play()
-          .then(() => {
-            statusText.textContent = `Playing: ${ch.title}`;
-          })
-          .catch((err) => {
-            statusText.textContent = `Play failed: ${err.message || err}`;
-          });
+        // Get initial resolution
+        const level = hls.levels[hls.currentLevel];
+        if (level) {
+          updateStats({ resolution: level.width + 'x' + level.height });
+        }
+
+        previewVideo.play().then(() => {
+          statusText.textContent = `正在播放: ${channel.tvgName || channel.title}`;
+        }).catch((err) => {
+          statusText.textContent = `播放失败: ${err.message}`;
+        });
       });
       return;
     }
 
-    // Fallback to native if hls.js not supported but native might work
+    // Fallback to native
     previewVideo.src = url;
     await previewVideo.play();
-    statusText.textContent = `Playing: ${ch.title}`;
+    statusText.textContent = `正在播放: ${channel.tvgName || channel.title}`;
   } catch (e) {
-    statusText.textContent = `Preview failed: ${e.message || e}`;
+    statusText.textContent = `预览失败: ${e.message || e}`;
     console.error('Preview error:', e);
   }
 }
@@ -498,12 +592,12 @@ async function quickTestSpeed(channel, callback) {
 async function testChannelSpeed(channel) {
   const ch = channel || currentState.selectedChannel;
   if (!ch) {
-    speedText.textContent = 'Please select a channel first';
+    speedText.textContent = '请先选择频道';
     return;
   }
 
   const url = ch.uri;
-  speedText.textContent = 'Testing connection...';
+  speedText.textContent = '正在测速...';
 
   try {
     // Measure latency only - this is what matters for channel switching
@@ -512,25 +606,25 @@ async function testChannelSpeed(channel) {
     const latencyMs = (performance.now() - start).toFixed(0);
 
     if (!response.ok) {
-      speedText.textContent = `Test failed: HTTP ${response.status}`;
+      speedText.textContent = `测速失败: HTTP ${response.status}`;
       return;
     }
 
     // Show latency with quality indicator
     let quality = '';
     if (latencyMs < 100) {
-      quality = 'Excellent';
+      quality = '极佳';
     } else if (latencyMs < 300) {
-      quality = 'Good';
+      quality = '良好';
     } else if (latencyMs < 800) {
-      quality = 'Fair';
+      quality = '一般';
     } else {
-      quality = 'Poor';
+      quality = '较差';
     }
 
-    speedText.textContent = `Latency: ${latencyMs}ms (${quality})`;
+    speedText.textContent = `延迟: ${latencyMs}ms (${quality})`;
   } catch (e) {
-    speedText.textContent = `Test failed: ${e.message || e}`;
+    speedText.textContent = `测速失败: ${e.message || e}`;
   }
 }
 
@@ -538,7 +632,7 @@ async function testChannelSpeed(channel) {
 window.addEventListener('DOMContentLoaded', async () => {
   if (!window.broadcastAPI) {
     // 预加载失败时的降级提示
-    statusText.textContent = '预加载脚本未加载成功，请检查 Electron 配置。';
+    statusText.textContent = '预加载脚本加载失败，请检查 Electron 配置';
     return;
   }
 
@@ -594,17 +688,13 @@ castButton.addEventListener('click', () => {
 // 刷新 DLNA 设备
 refreshDeviceButton.addEventListener('click', () => {
   window.broadcastAPI.refreshDevices();
-  statusText.textContent = '正在重新搜索 DLNA 设备...';
+  statusText.textContent = '正在搜索 DLNA 设备...';
 });
 
 // 刷新频道列表
 refreshChannelButton.addEventListener('click', () => {
   window.broadcastAPI.refreshChannels();
   statusText.textContent = '正在重新加载频道列表...';
-});
-
-previewButton.addEventListener('click', () => {
-  previewCurrentChannel();
 });
 
 speedButton.addEventListener('click', () => {
@@ -623,7 +713,7 @@ if (channelSearch) {
 if (sortBySpeedButton) {
   sortBySpeedButton.addEventListener('click', () => {
     isSortedBySpeed = !isSortedBySpeed;
-    sortBySpeedButton.textContent = isSortedBySpeed ? '按速度排序 ↑' : '按速度排序 ↓';
+    sortBySpeedButton.textContent = isSortedBySpeed ? '速度排序 ↑' : '速度排序 ↓';
     renderChannelGallery();
   });
 }
@@ -633,7 +723,7 @@ if (sourceSelect) {
   sourceSelect.addEventListener('change', async (e) => {
     const sourceId = e.target.value;
     if (sourceId && sourceId !== currentConfig.currentSourceId) {
-      statusText.textContent = '正在切换源...';
+      statusText.textContent = '正在切换信号源...';
       await window.broadcastAPI.switchSource(sourceId);
       currentConfig.currentSourceId = sourceId;
       renderSourceSelect();
@@ -666,7 +756,7 @@ if (addSourceButton) {
     const name = newSourceName.value.trim();
     const url = newSourceUrl.value.trim();
     if (!name || !url) {
-      statusText.textContent = '请填写源名称和 URL';
+      statusText.textContent = '请输入信号源名称和地址';
       return;
     }
     const result = await window.broadcastAPI.addSource({ name, url });
@@ -679,7 +769,7 @@ if (addSourceButton) {
       // 清空输入
       newSourceName.value = '';
       newSourceUrl.value = '';
-      statusText.textContent = '源已添加';
+      statusText.textContent = '信号源已添加';
     } else {
       statusText.textContent = result.error || '添加失败';
     }

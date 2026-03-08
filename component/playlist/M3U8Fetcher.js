@@ -24,39 +24,49 @@ class M3U8Client {
                 debugger
                 let allChannel = []
                 parser.manifest.segments.forEach((entry=>{
-                    let title = entry.title;
-                    if(!title){
-                        return;
+                    // The m3u8-parser library parses EXTINF into title field
+                    // Format in title: tvg-name="xxx" tvg-logo="xxx",Display Name
+                    let titleField = entry.title || '';
+
+                    // Split by comma to separate attributes from display name
+                    const commaIndex = titleField.indexOf(',');
+                    let attrPart = '';
+                    let displayName = titleField;
+
+                    if (commaIndex !== -1) {
+                        attrPart = titleField.substring(0, commaIndex);
+                        displayName = titleField.substring(commaIndex + 1).trim();
                     }
-                    let titleSplit = title.split(' ')
-                    let titleMap = new Map();
-                    titleSplit.forEach(entry => {
-                        if(entry.indexOf('=') == -1){
-                            return;
-                        }
-                        let entryPart = entry.split('=');
-                        titleMap.set(entryPart[0], entryPart[1])
+
+                    // Parse attributes: tvg-name="value" format
+                    const attrMap = new Map();
+                    const attrRegex = /(\w[-\w]*)="([^"]*)"/g;
+                    let match;
+                    while ((match = attrRegex.exec(attrPart)) !== null) {
+                        attrMap.set(match[1], match[2]);
+                    }
+
+                    // Extract attributes
+                    const tvgName = attrMap.get('tvg-name');
+                    const tvgId = attrMap.get('tvg-id');
+                    const tvgCountry = attrMap.get('tvg-country');
+                    const tvgLanguage = attrMap.get('tvg-language');
+                    const tvgLogo = attrMap.get('tvg-logo');
+                    const groupTitle = attrMap.get('group-title');
+
+                    // Determine channel title
+                    let titleName = displayName || tvgName || tvgId || groupTitle || 'Unknown';
+
+                    allChannel.push({
+                        title: titleName,
+                        uri: entry.uri,
+                        icon: tvgLogo || null,
+                        tvgName: tvgName || null,
+                        tvgId: tvgId || null,
+                        country: tvgCountry || null,
+                        language: tvgLanguage || null,
+                        group: groupTitle || null
                     })
-                    let titleName = titleMap.get('tvg-name')
-                    if(!titleName){
-                        titleName = titleMap.get('tvg-id')
-                    }
-                    if(!titleName){
-                        titleName = titleMap.get('group-title')
-                    }
-                    if(!titleName){
-                        titleName = 'Unknown'
-                    }
-                    if(title.split(',').length === 2){
-                        titleName = title.split(',')[1]
-                    }
-                    titleName = titleName.replace(/"/g,'')
-                    // 提取图标 URL
-                    let iconUrl = titleMap.get('tvg-logo')
-                    if(iconUrl){
-                        iconUrl = iconUrl.replace(/"/g,'')
-                    }
-                    allChannel.push({title: titleName, uri: entry.uri, icon: iconUrl})
                 }))
                 if(callBack){
                     callBack(allChannel)

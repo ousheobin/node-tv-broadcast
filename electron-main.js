@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const https = require('https');
+const http = require('http');
 const MediaRendererClient = require('upnp-mediarenderer-client');
 
 const UpnpSearcher = require('./component/dlna/SSDPSearcher');
@@ -134,17 +136,73 @@ function initBackend() {
   }
 }
 
+// 解析 URL 重定向链，获取最终 URL
+function resolveRedirectUrl(url, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    const followRedirect = (currentUrl, redirectsLeft) => {
+      if (redirectsLeft <= 0) {
+        resolve(currentUrl);
+        return;
+      }
+
+      const isHttps = currentUrl.startsWith('https');
+      const client = isHttps ? https : http;
+
+      const options = new URL(currentUrl);
+      options.method = 'HEAD';
+      options.timeout = 10000;
+
+      const req = client.request(options, (res) => {
+        // Handle redirect
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const redirectUrl = new URL(res.headers.location, currentUrl).toString();
+          console.log(`[Redirect] ${currentUrl} -> ${redirectUrl}`);
+          followRedirect(redirectUrl, redirectsLeft - 1);
+        } else {
+          resolve(currentUrl);
+        }
+      });
+
+      req.on('error', (err) => {
+        console.error('[Redirect] Error:', err.message);
+        resolve(currentUrl); // Return original URL on error
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(currentUrl);
+      });
+
+      req.end();
+    };
+
+    followRedirect(url, maxRedirects);
+  });
+}
+
 // 处理投屏
-function startCast() {
+async function startCast() {
   const { selectedDevice, selectedChannel } = state;
   if (!selectedDevice || !selectedChannel) {
     if (mainWindow) {
       mainWindow.webContents.send('cast:result', {
         ok: false,
-        message: '请先选择投屏设备和频道，再点击开始投屏',
+        message: '请先选择设备和频道',
       });
     }
     return;
+  }
+
+  // 解析重定向获取最终 URL
+  const originalUrl = selectedChannel.uri;
+  let finalUrl = originalUrl;
+
+  try {
+    finalUrl = await resolveRedirectUrl(originalUrl);
+    console.log('[DLNA] Resolved URL:', originalUrl, '->', finalUrl);
+  } catch (err) {
+    console.error('[DLNA] Failed to resolve redirect:', err);
+    // Continue with original URL
   }
 
   // 调试日志：确认已经拿到的投屏信息
@@ -152,11 +210,12 @@ function startCast() {
     device: selectedDevice && selectedDevice.name,
     address: selectedDevice && selectedDevice.address,
     channel: selectedChannel && selectedChannel.title,
-    uri: selectedChannel && selectedChannel.uri,
+    originalUri: originalUrl,
+    finalUri: finalUrl,
   });
 
   const client = new MediaRendererClient(selectedDevice.address);
-  client.load(selectedChannel.uri, {}, (err) => {
+  client.load(finalUrl, {}, (err) => {
     if (err) {
       if (mainWindow) {
         mainWindow.webContents.send('cast:result', {

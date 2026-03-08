@@ -9,7 +9,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
     "electron": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "build:cli": "node scripts/build-cli.js",
+    "build:cli:macos": "pkg index.js --output dist/cli/tv-broadcast-macos --target node18-macos-x64",
+    "build:cli:linux": "pkg index.js --output dist/cli/tv-broadcast-linux --target node18-linux-x64",
+    "build:cli:win": "pkg index.js --output dist/cli/tv-broadcast-win.exe --target node18-win-x64"
   },
   "dependencies": {
     "electron-store": "^11.0.2",
@@ -21,7 +25,8 @@
   },
   "devDependencies": {
     "electron": "^39.2.3",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "pkg": "5.8.1"
   },
   "bin": {
     "tv-broadcast": "./index.js"
@@ -45,5 +50,18 @@
       ],
       "category": "public.app-category.video"
     }
+  },
+  "pkg": {
+    "scripts": [
+      "component/**/*.js"
+    ],
+    "assets": [
+      "node_modules/m3u8-parser/dist/**/*"
+    ],
+    "targets": [
+      "node18-macos-x64",
+      "node18-linux-x64",
+      "node18-win-x64"
+    ]
   }
 }
