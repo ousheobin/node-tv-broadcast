@@ -153,10 +153,10 @@ function resolveRedirectUrl(url, maxRedirects = 5) {
       options.timeout = 10000;
 
       const req = client.request(options, (res) => {
-        // Handle redirect
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // Handle redirect (3xx status OR any status with location header)
+        if (res.headers.location) {
           const redirectUrl = new URL(res.headers.location, currentUrl).toString();
-          console.log(`[Redirect] ${currentUrl} -> ${redirectUrl}`);
+          console.log(`[Redirect] ${currentUrl} (${res.statusCode}) -> ${redirectUrl}`);
           followRedirect(redirectUrl, redirectsLeft - 1);
         } else {
           resolve(currentUrl);
@@ -180,20 +180,21 @@ function resolveRedirectUrl(url, maxRedirects = 5) {
   });
 }
 
-// 处理投屏
+// Handle casting
 async function startCast() {
   const { selectedDevice, selectedChannel } = state;
   if (!selectedDevice || !selectedChannel) {
+    const message = 'Please select device and channel first';
     if (mainWindow) {
       mainWindow.webContents.send('cast:result', {
         ok: false,
-        message: '请先选择设备和频道',
+        message,
       });
     }
-    return;
+    return { ok: false, message };
   }
 
-  // 解析重定向获取最终 URL
+  // Resolve redirect to get final URL
   const originalUrl = selectedChannel.uri;
   let finalUrl = originalUrl;
 
@@ -205,7 +206,7 @@ async function startCast() {
     // Continue with original URL
   }
 
-  // 调试日志：确认已经拿到的投屏信息
+  // Debug log
   console.log('[DLNA] startCast', {
     device: selectedDevice && selectedDevice.name,
     address: selectedDevice && selectedDevice.address,
@@ -214,24 +215,31 @@ async function startCast() {
     finalUri: finalUrl,
   });
 
-  const client = new MediaRendererClient(selectedDevice.address);
-  client.load(finalUrl, {}, (err) => {
-    if (err) {
+  return new Promise((resolve) => {
+    const client = new MediaRendererClient(selectedDevice.address);
+    client.load(finalUrl, {}, (err) => {
+      if (err) {
+        const message = `Cast failed: ${err.message || err}`;
+        console.error('[DLNA] Cast error:', err);
+        if (mainWindow) {
+          mainWindow.webContents.send('cast:result', {
+            ok: false,
+            message,
+          });
+        }
+        resolve({ ok: false, message });
+        return;
+      }
+      client.play();
+      const message = `Casting to ${selectedDevice.name}: ${selectedChannel.title}`;
       if (mainWindow) {
         mainWindow.webContents.send('cast:result', {
-          ok: false,
-          message: `投屏失败: ${err.message || err}`,
+          ok: true,
+          message,
         });
       }
-      return;
-    }
-    client.play();
-    if (mainWindow) {
-      mainWindow.webContents.send('cast:result', {
-        ok: true,
-        message: `正在投屏到 ${selectedDevice.name}: ${selectedChannel.title}`,
-      });
-    }
+      resolve({ ok: true, message });
+    });
   });
 }
 
@@ -257,8 +265,8 @@ function setupIpc() {
     broadcastState();
   });
 
-  ipcMain.handle('cast:start', () => {
-    startCast();
+  ipcMain.handle('cast:start', async () => {
+    await startCast();
   });
 
   ipcMain.handle('search:retry', () => {

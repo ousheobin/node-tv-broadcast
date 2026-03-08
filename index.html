@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-lang="zh">
   <head>
     <meta charset="UTF-8" />
-    <title>电视广播 - Electron</title>
+    <title>TV Broadcast</title>
     <!-- TailwindCSS CDN（Electron 本地加载没问题） -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- HLS 预览支持 -->
@@ -23,10 +23,10 @@
     <div class="h-full max-w-5xl mx-auto px-6 py-6 space-y-4 flex flex-col">
       <header class="flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-semibold tracking-tight text-slate-50">
-            TV Broadcast 桌面版
+          <h1 class="text-2xl font-semibold tracking-tight text-slate-50" data-i18n="title">
+            电视广播
           </h1>
-          <p class="text-sm text-slate-400 mt-1">
+          <p class="text-sm text-slate-400 mt-1" data-i18n="subtitle">
             选择 DLNA 设备和频道，一键投屏到电视
           </p>
         </div>
@@ -47,6 +47,7 @@
               id="refreshDeviceButton"
               class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100 active:scale-95 transition"
               title="刷新设备"
+              data-i18n-title="refreshDevice"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -57,11 +58,12 @@
             id="refreshChannelButton"
             class="inline-flex h-9 px-3 items-center justify-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/60 text-xs text-slate-300 hover:bg-slate-800 hover:text-slate-100 hover:border-slate-600 active:scale-95 transition"
             title="刷新频道"
+            data-i18n-title="refreshChannel"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
             </svg>
-            <span>刷新</span>
+            <span data-i18n="refresh">刷新</span>
           </button>
           <button
             id="castButton"
@@ -71,7 +73,18 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
-            <span>投屏</span>
+            <span data-i18n="cast">投屏</span>
+          </button>
+          <button
+            id="settingsButton"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-slate-100 active:scale-95 transition"
+            title="设置"
+            data-i18n-title="settings"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
           </button>
         </div>
       </header>
@@ -84,8 +97,8 @@
             class="flex-1 rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 space-y-3 shadow-lg shadow-black/30 flex flex-col min-h-0"
           >
             <div class="flex items-center justify-between">
-              <h3 class="text-sm font-medium text-slate-50">频道预览</h3>
-              <span class="text-[11px] text-slate-500">HLS 实时统计</span>
+              <h3 class="text-sm font-medium text-slate-50" data-i18n="channelPreview">频道预览</h3>
+              <span class="text-[11px] text-slate-500" data-i18n="hlsStats">HLS 实时统计</span>
             </div>
             <div
               class="relative mt-1 rounded-xl overflow-hidden border border-slate-800 bg-black flex-1 min-h-0"
@@ -101,19 +114,19 @@
             <!-- 实时统计信息 -->
             <div class="grid grid-cols-4 gap-2 text-xs">
               <div class="bg-slate-800/50 rounded-lg px-2 py-1.5 text-center">
-                <div class="text-[10px] text-slate-500">延迟</div>
+                <div class="text-[10px] text-slate-500" data-i18n="latency">延迟</div>
                 <div id="statLatency" class="text-emerald-400 font-medium">-</div>
               </div>
               <div class="bg-slate-800/50 rounded-lg px-2 py-1.5 text-center">
-                <div class="text-[10px] text-slate-500">码率</div>
+                <div class="text-[10px] text-slate-500" data-i18n="bitrate">码率</div>
                 <div id="statBitrate" class="text-sky-400 font-medium">-</div>
               </div>
               <div class="bg-slate-800/50 rounded-lg px-2 py-1.5 text-center">
-                <div class="text-[10px] text-slate-500">分辨率</div>
+                <div class="text-[10px] text-slate-500" data-i18n="resolution">分辨率</div>
                 <div id="statResolution" class="text-amber-400 font-medium">-</div>
               </div>
               <div class="bg-slate-800/50 rounded-lg px-2 py-1.5 text-center">
-                <div class="text-[10px] text-slate-500">下载</div>
+                <div class="text-[10px] text-slate-500" data-i18n="download">下载</div>
                 <div id="statDownload" class="text-purple-400 font-medium">-</div>
               </div>
             </div>
@@ -130,16 +143,18 @@
               <div class="space-y-1">
                 <div
                   class="text-[11px] uppercase tracking-wide text-slate-500"
+                  data-i18n="status"
                 >
                   状态
                 </div>
-                <span id="statusText">初始化中...</span>
+                <span id="statusText" data-i18n="loading">初始化中...</span>
               </div>
 
               <div class="space-y-1">
                 <div class="flex items-center justify-between">
                   <span
                     class="text-[11px] uppercase tracking-wide text-slate-500"
+                    data-i18n="connectionLatency"
                   >
                     连接延迟
                   </span>
@@ -147,11 +162,11 @@
                     id="speedButton"
                     class="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1 text-[11px] text-slate-300 hover:bg-slate-800/90 transition"
                   >
-                    ⏱ 测速
+                    ⏱ <span data-i18n="test">测速</span>
                   </button>
                 </div>
-                <div id="speedText" class="text-[11px] text-slate-400">
-                  未测速
+                <div id="speedText" class="text-[11px] text-slate-400" data-i18n="waiting">
+                  等待测速
                 </div>
               </div>
             </div>
@@ -164,8 +179,8 @@
         >
           <div class="flex items-center justify-between mb-2">
             <div class="flex flex-col">
-              <h2 class="text-base font-medium text-slate-50">频道列表</h2>
-              <span class="text-[11px] text-slate-500">M3U 源</span>
+              <h2 class="text-base font-medium text-slate-50" data-i18n="channelList">频道列表</h2>
+              <span class="text-[11px] text-slate-500" data-i18n="m3uSource">M3U 源</span>
             </div>
           </div>
 
@@ -173,11 +188,13 @@
           <div class="space-y-2 mb-2">
             <div class="flex items-center justify-between">
               <label class="block text-[11px] font-medium text-slate-400"
+                data-i18n="signalSource"
                 >信号源</label
               >
               <button
                 id="manageSourceButton"
                 class="text-[11px] text-sky-400 hover:text-sky-300 transition"
+                data-i18n="manage"
               >
                 管理
               </button>
@@ -233,7 +250,7 @@
         class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl"
       >
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-medium text-slate-50">管理信号源</h3>
+          <h3 class="text-lg font-medium text-slate-50" data-i18n="manageSource">管理信号源</h3>
           <button
             id="closeSourceModal"
             class="text-slate-400 hover:text-slate-200 transition"
@@ -250,7 +267,7 @@
 
         <!-- 添加新源 -->
         <div class="border-t border-slate-800 pt-4 space-y-3">
-          <h4 class="text-sm font-medium text-slate-300">添加信号源</h4>
+          <h4 class="text-sm font-medium text-slate-300" data-i18n="addSource">添加信号源</h4>
           <input
             id="newSourceName"
             type="text"
@@ -266,6 +283,7 @@
           <button
             id="addSourceButton"
             class="w-full rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium py-2 transition"
+            data-i18n="add"
           >
             添加
           </button>
@@ -273,6 +291,55 @@
       </div>
     </div>
 
+    <!-- 设置页面弹窗 -->
+    <div
+      id="settingsModal"
+      class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50"
+    >
+      <div
+        class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+      >
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-lg font-medium text-slate-50" data-i18n="settings">设置</h3>
+          <button
+            id="closeSettingsModal"
+            class="text-slate-400 hover:text-slate-200 transition"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- 语言设置 -->
+        <div class="space-y-3">
+          <label class="block text-sm font-medium text-slate-300" data-i18n="language">语言</label>
+          <div class="space-y-2">
+            <button
+              class="lang-option w-full text-left px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition flex items-center justify-between"
+              data-lang="zh"
+            >
+              <span>简体中文</span>
+              <span class="check-icon text-sky-400 hidden">✓</span>
+            </button>
+            <button
+              class="lang-option w-full text-left px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition flex items-center justify-between"
+              data-lang="en"
+            >
+              <span>English</span>
+              <span class="check-icon text-sky-400 hidden">✓</span>
+            </button>
+            <button
+              class="lang-option w-full text-left px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition flex items-center justify-between"
+              data-lang="zh_TW"
+            >
+              <span>繁體中文</span>
+              <span class="check-icon text-sky-400 hidden">✓</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./i18n.js"></script>
     <script src="./renderer.js"></script>
   </body>
   </html>

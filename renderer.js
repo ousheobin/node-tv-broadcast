@@ -1,4 +1,4 @@
-// 简单的渲染进程脚本，操作 DOM 显示设备和频道列表
+// Renderer script: manipulate DOM to display devices and channels
 
 const deviceSelect = document.getElementById('deviceSelect');
 const channelGallery = document.getElementById('channelGallery');
@@ -13,6 +13,7 @@ const sourceSelect = document.getElementById('sourceSelect');
 const manageSourceButton = document.getElementById('manageSourceButton');
 const channelSearch = document.getElementById('channelSearch');
 const sortBySpeedButton = document.getElementById('sortBySpeedButton');
+const settingsButton = document.getElementById('settingsButton');
 
 // Real-time stats elements
 const statLatency = document.getElementById('statLatency');
@@ -20,13 +21,18 @@ const statBitrate = document.getElementById('statBitrate');
 const statResolution = document.getElementById('statResolution');
 const statDownload = document.getElementById('statDownload');
 
-// 源管理弹窗元素
+// Source management modal elements
 const sourceModal = document.getElementById('sourceModal');
 const closeSourceModal = document.getElementById('closeSourceModal');
 const sourceList = document.getElementById('sourceList');
 const newSourceName = document.getElementById('newSourceName');
 const newSourceUrl = document.getElementById('newSourceUrl');
 const addSourceButton = document.getElementById('addSourceButton');
+
+// Settings modal elements
+const settingsModal = document.getElementById('settingsModal');
+const closeSettingsModal = document.getElementById('closeSettingsModal');
+const langOptions = document.querySelectorAll('.lang-option');
 
 let currentState = {
   devices: [],
@@ -39,10 +45,58 @@ let currentConfig = {
   currentSourceId: null,
 };
 let searchKeyword = '';
-let speedCache = new Map(); // 缓存测速结果
-let isSortedBySpeed = false; // 是否按速度排序
+let speedCache = new Map(); // Cache speed test results
+let isSortedBySpeed = false; // Whether sorted by speed
 
-// 渲染源选择下拉框
+// Channel status state - independent of language
+let channelStatusState = {
+  type: 'idle', // idle, loading, playing, error, casting
+  message: '',
+  channelName: '',
+  deviceName: ''
+};
+
+// Update channel status display (language independent)
+function updateChannelStatus(type, message, channelName, deviceName) {
+  channelStatusState.type = type;
+  if (message) channelStatusState.message = message;
+  if (channelName) channelStatusState.channelName = channelName;
+  if (deviceName) channelStatusState.deviceName = deviceName;
+
+  const parts = [];
+  if (channelStatusState.deviceName) {
+    parts.push(`Device: ${channelStatusState.deviceName}`);
+  }
+  if (channelStatusState.channelName) {
+    parts.push(`Channel: ${channelStatusState.channelName}`);
+  }
+
+  let statusMsg = '';
+  switch(channelStatusState.type) {
+    case 'loading':
+      statusMsg = channelStatusState.message || 'Loading...';
+      break;
+    case 'playing':
+      statusMsg = channelStatusState.message || `Playing: ${channelStatusState.channelName}`;
+      break;
+    case 'error':
+      statusMsg = channelStatusState.message || 'Error';
+      break;
+    case 'casting':
+      statusMsg = channelStatusState.message || 'Casting...';
+      break;
+    default:
+      statusMsg = channelStatusState.message || 'Ready';
+  }
+
+  if (parts.length > 0) {
+    statusText.textContent = `${parts.join(' | ')} - ${statusMsg}`;
+  } else {
+    statusText.textContent = statusMsg;
+  }
+}
+
+// Render source select dropdown
 function renderSourceSelect() {
   if (!sourceSelect) return;
   sourceSelect.innerHTML = '';
@@ -57,7 +111,7 @@ function renderSourceSelect() {
   });
 }
 
-// 渲染源管理弹窗列表
+// Render source management modal list
 function renderSourceList() {
   if (!sourceList) return;
   sourceList.innerHTML = '';
@@ -80,23 +134,23 @@ function renderSourceList() {
     const actions = document.createElement('div');
     actions.className = 'flex items-center gap-1 ml-2';
 
-    // 当前源标记
+    // Current source indicator
     if (s.id === currentConfig.currentSourceId) {
       const current = document.createElement('span');
       current.className = 'text-[10px] text-emerald-400 px-1';
-      current.textContent = '当前';
+      current.textContent = 'Current';
       actions.appendChild(current);
     }
 
-    // 删除按钮（至少保留一个）
+    // Delete button (keep at least one)
     if (currentConfig.sources.length > 1) {
       const delBtn = document.createElement('button');
       delBtn.className =
         'text-[10px] text-rose-400 hover:text-rose-300 px-2 py-1 transition';
-      delBtn.textContent = '删除';
+      delBtn.textContent = 'Delete';
       delBtn.addEventListener('click', async () => {
         await window.broadcastAPI.removeSource(s.id);
-        // 刷新配置
+        // Refresh config
         const config = await window.broadcastAPI.getConfig();
         currentConfig = config;
         renderSourceSelect();
@@ -111,7 +165,7 @@ function renderSourceList() {
   });
 }
 
-// 打开弹窗
+// Open modal
 function openSourceModal() {
   if (sourceModal) {
     sourceModal.classList.remove('hidden');
@@ -120,7 +174,7 @@ function openSourceModal() {
   }
 }
 
-// 关闭弹窗
+// Close modal
 function closeSourceModalFn() {
   if (sourceModal) {
     sourceModal.classList.add('hidden');
@@ -131,12 +185,12 @@ function closeSourceModalFn() {
 function renderState(state) {
   currentState = state;
 
-  // 渲染设备列表
+  // Render device list
   deviceSelect.innerHTML = '';
   if (!state.devices || state.devices.length === 0) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = '正在搜索 DLNA 设备...';
+    opt.textContent = 'Searching DLNA devices...';
     deviceSelect.appendChild(opt);
     deviceSelect.disabled = true;
   } else {
@@ -152,7 +206,7 @@ function renderState(state) {
     });
   }
 
-  // 渲染频道 Gallery（支持搜索过滤）
+  // Render channel gallery (with search filter)
   renderChannelGallery();
 }
 
@@ -164,12 +218,12 @@ function renderChannelGallery() {
     const empty = document.createElement('div');
     empty.className =
       'col-span-2 text-[12px] text-slate-500 py-4 text-center border border-dashed border-slate-700 rounded-xl';
-    empty.textContent = '正在加载频道列表...';
+    empty.textContent = 'Loading channels...';
     channelGallery.appendChild(empty);
     return;
   }
 
-  // 过滤频道（搜索tvgName和title）
+  // Filter channels (search tvgName and title)
   let filteredChannels = searchKeyword
     ? state.channels.filter((c) => {
         const searchLower = searchKeyword.toLowerCase();
@@ -183,12 +237,12 @@ function renderChannelGallery() {
     const empty = document.createElement('div');
     empty.className =
       'col-span-2 text-[12px] text-slate-500 py-4 text-center border border-dashed border-slate-700 rounded-xl';
-    empty.textContent = '未找到匹配的频道';
+    empty.textContent = 'No channels found';
     channelGallery.appendChild(empty);
     return;
   }
 
-  // 按速度排序
+  // Sort by speed
   if (isSortedBySpeed) {
     filteredChannels.sort((a, b) => {
       const speedA = speedCache.get(a.uri);
@@ -202,9 +256,9 @@ function renderChannelGallery() {
     });
   }
 
-  // 检查是否有任何频道有图标
+  // Check if any channel has icon
   const hasAnyIcon = filteredChannels.some(c => c.icon);
-  // 根据是否有图标设置网格列数
+  // Set grid columns based on icon presence
   channelGallery.className = hasAnyIcon
     ? 'grid grid-cols-1 gap-2 flex-1 overflow-y-auto pr-1 min-h-0'
     : 'grid grid-cols-2 gap-2 flex-1 overflow-y-auto pr-1 min-h-0';
@@ -215,7 +269,7 @@ function renderChannelGallery() {
     const card = document.createElement('button');
     card.type = 'button';
 
-    // 有图标时一行一个，横向布局；无图标时一行两个，纵向布局
+    // Horizontal layout with icon, vertical without
     if (hasAnyIcon) {
       card.className =
         'group flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-xs transition ' +
@@ -230,7 +284,7 @@ function renderChannelGallery() {
           : 'border-slate-700 bg-slate-900/70 text-slate-300 hover:bg-slate-800/80 hover:border-slate-500');
     }
 
-    // 图标（仅当有图标时显示）
+    // Icon (only when available)
     if (c.icon) {
       const iconEl = document.createElement('img');
       iconEl.className = 'w-10 h-10 rounded object-cover flex-shrink-0 bg-slate-800';
@@ -246,10 +300,10 @@ function renderChannelGallery() {
 
     const titleEl = document.createElement('div');
     titleEl.className = 'truncate font-medium';
-    // GUI优先展示tvgName，如果没有则使用title
+    // GUI shows tvgName first, fallback to title
     titleEl.textContent = c.tvgName || c.title;
 
-    // 第二行：优先展示地区和类目，都没有则展示URL
+    // Second line: show country and group, fallback to URL
     const metaEl = document.createElement('div');
     metaEl.className =
       'mt-0.5 text-[10px] text-slate-500 group-hover:text-slate-400 truncate';
@@ -264,7 +318,7 @@ function renderChannelGallery() {
       metaEl.textContent = c.uri;
     }
 
-    // 测速结果显示区域
+    // Speed test result area
     const speedEl = document.createElement('div');
     speedEl.className = 'mt-0.5 text-[10px] speed-indicator';
     speedEl.dataset.uri = c.uri;
@@ -290,7 +344,7 @@ function renderChannelGallery() {
     contentEl.appendChild(speedEl);
     card.appendChild(contentEl);
 
-    // 点击选择频道
+    // Click to select channel
     card.addEventListener('click', () => {
       window.broadcastAPI.selectChannel(c.uri);
       startPreview(c);
@@ -300,32 +354,30 @@ function renderChannelGallery() {
     channelGallery.appendChild(card);
   });
 
-  const deviceName = state.selectedDevice ? state.selectedDevice.name : '未选择';
-  const channelName = state.selectedChannel
-    ? state.selectedChannel.title
-    : '未选择';
-  statusText.textContent = `当前设备: ${deviceName} | 当前频道: ${channelName}`;
+  const deviceName = state.selectedDevice ? state.selectedDevice.name : '';
+  const channelName = state.selectedChannel ? state.selectedChannel.title : '';
+  updateChannelStatus(channelStatusState.type, channelStatusState.message, channelName, deviceName);
 }
 
-// 批量预测速
+// Batch pre-test all channels
 async function preTestAllChannels() {
   if (!currentState.channels || currentState.channels.length === 0) return;
 
   const channels = currentState.channels;
-  statusText.textContent = `开始预测速 ${channels.length} 个频道...`;
+  statusText.textContent = `Starting speed test for ${channels.length} channels...`;
 
-  // 提高并发到 30 个，只测时延不会占用太多资源
+  // Increase concurrency to 30, latency test doesn't consume much resource
   const concurrency = 30;
   let tested = 0;
 
-  // 单个频道测速，带超时控制
+  // Single channel speed test with timeout
   async function testOneChannel(ch) {
     if (speedCache.has(ch.uri)) {
       tested++;
       return;
     }
 
-    // 3秒超时控制
+    // 3 second timeout
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), 3000)
     );
@@ -336,7 +388,7 @@ async function preTestAllChannels() {
           quickTestSpeed(ch, (result) => {
             speedCache.set(ch.uri, result);
             tested++;
-            // 更新对应卡片的显示
+            // Update card display
             const speedEl = document.querySelector(
               `[data-uri="${CSS.escape(ch.uri)}"]`
             );
@@ -360,55 +412,55 @@ async function preTestAllChannels() {
         timeoutPromise,
       ]);
     } catch (e) {
-      // 超时或失败
-      speedCache.set(ch.uri, '超时');
+      // Timeout or failure
+      speedCache.set(ch.uri, 'Timeout');
       tested++;
       const speedEl = document.querySelector(
         `[data-uri="${CSS.escape(ch.uri)}"]`
       );
       if (speedEl) {
-        speedEl.textContent = '超时';
+        speedEl.textContent = 'Timeout';
         speedEl.className = 'mt-1 text-[10px] speed-indicator text-slate-500';
       }
     }
 
-    // 每 10 个更新一次状态栏
+    // Update status every 10 channels
     if (tested % 10 === 0 || tested === channels.length) {
-      statusText.textContent = `预测速中... ${tested}/${channels.length}`;
+      statusText.textContent = `Testing... ${tested}/${channels.length}`;
     }
   }
 
-  // 分批处理，但不用 await Promise.all 阻塞
+  // Process in batches without blocking with await Promise.all
   for (let i = 0; i < channels.length; i += concurrency) {
     const batch = channels.slice(i, i + concurrency);
-    // 并发执行，但不等待全部完成，超时的会自动标记
+    // Execute concurrently without waiting, timeouts will be auto-marked
     batch.forEach((ch) => testOneChannel(ch));
-    // 小延迟让出主线程
+    // Small delay to yield main thread
     await new Promise((r) => setTimeout(r, 50));
   }
 
-  // 等待所有测速完成（最多等 3 秒，超过 3 秒的延迟没法看）
+  // Wait for all tests to complete (max 3 seconds, latency > 3s is unusable)
   let waitCount = 0;
   while (tested < channels.length && waitCount < 30) {
     await new Promise((r) => setTimeout(r, 100));
     waitCount++;
   }
 
-  // 标记未完成的为超时
+  // Mark unfinished as timeout
   channels.forEach((ch) => {
     if (!speedCache.has(ch.uri)) {
-      speedCache.set(ch.uri, '超时');
+      speedCache.set(ch.uri, 'Timeout');
       const speedEl = document.querySelector(
         `[data-uri="${CSS.escape(ch.uri)}"]`
       );
       if (speedEl) {
-        speedEl.textContent = '超时';
+        speedEl.textContent = 'Timeout';
         speedEl.className = 'mt-1 text-[10px] speed-indicator text-slate-500';
       }
     }
   });
 
-  statusText.textContent = `测速完成，可按速度排序`;
+  statusText.textContent = `Speed test complete, can sort by speed`;
 }
 
 // Update real-time stats display
@@ -440,7 +492,6 @@ async function startPreview(channel) {
 
   const url = channel.uri;
   clearStats();
-  statusText.textContent = `正在加载: ${channel.tvgName || channel.title}...`;
 
   try {
     // Clean up existing hls instance
@@ -449,10 +500,14 @@ async function startPreview(channel) {
       window.__hlsInstance = null;
     }
 
-    // Reset video element
-    previewVideo.pause();
-    previewVideo.removeAttribute('src');
-    previewVideo.load();
+    // Reset video element - wait for any pending play/pause to complete
+    if (previewVideo.src) {
+      previewVideo.pause();
+      previewVideo.removeAttribute('src');
+      previewVideo.load();
+      // Small delay to let the browser process the cleanup
+      await new Promise(r => setTimeout(r, 50));
+    }
 
     // Use hls.js for HLS playback
     if (window.Hls && window.Hls.isSupported()) {
@@ -496,40 +551,126 @@ async function startPreview(channel) {
       // Track level/quality changes
       hls.on(window.Hls.Events.LEVEL_SWITCHED, (event, data) => {
         const level = hls.levels[data.level];
-        if (level) {
+        if (level && level.width > 0 && level.height > 0) {
           const resolution = level.width + 'x' + level.height;
           updateStats({ resolution });
         }
       });
 
-      // Track buffer latency (time from live edge)
+      // Track buffer latency with moving average
+      const latencySamples = [];
+      const maxSamples = 5;
+      let lastCurrentTime = 0;
+      let stallCount = 0;
+
       setInterval(() => {
         if (hls && previewVideo) {
-          // Get current playback position vs live edge
           const currentTime = previewVideo.currentTime;
-          const bufferedEnd = hls.liveSyncPosition || currentTime;
+          const buffered = previewVideo.buffered;
 
-          if (bufferedEnd && currentTime) {
-            const bufferLatency = ((bufferedEnd - currentTime) * 1000).toFixed(0);
-            updateStats({ latency: bufferLatency });
+          // Detect stall - time not advancing but not paused
+          if (!previewVideo.paused && currentTime === lastCurrentTime && currentTime > 0) {
+            stallCount++;
+            if (stallCount > 3) {
+              console.warn('[HLS] Playback stalled, attempting recovery');
+              hls.recoverMediaError();
+              stallCount = 0;
+            }
+          } else {
+            stallCount = 0;
+          }
+          lastCurrentTime = currentTime;
+
+          // Check for weird timestamp (live stream timestamp issue)
+          if (currentTime > 1000000) {
+            // Reset to live edge if timestamp is unreasonable (> 11 days)
+            console.warn('[HLS] Weird timestamp detected:', currentTime);
+            if (hls.liveSyncPosition) {
+              previewVideo.currentTime = hls.liveSyncPosition;
+            }
+          }
+
+          if (buffered && buffered.length > 0 && currentTime > 0) {
+            // Find the buffer range that contains currentTime
+            let bufferedEnd = 0;
+            for (let i = 0; i < buffered.length; i++) {
+              if (currentTime >= buffered.start(i) && currentTime <= buffered.end(i)) {
+                bufferedEnd = buffered.end(i);
+                break;
+              }
+            }
+
+            // Only calculate if we found valid buffer range
+            if (bufferedEnd > currentTime) {
+              const latencyMs = (bufferedEnd - currentTime) * 1000;
+
+              // Add to samples
+              latencySamples.push(latencyMs);
+              if (latencySamples.length > maxSamples) {
+                latencySamples.shift();
+              }
+
+              // Calculate moving average
+              const avgLatency = latencySamples.reduce((a, b) => a + b, 0) / latencySamples.length;
+              updateStats({ latency: Math.max(0, avgLatency).toFixed(0) });
+            }
           }
         }
       }, 1000);
 
-      // Handle errors
+      // Handle errors with detailed descriptions
       hls.on(window.Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           switch(data.type) {
             case window.Hls.ErrorTypes.NETWORK_ERROR:
-              statusText.textContent = '网络错误，正在恢复...';
-              hls.startLoad();
+              {
+                let errorDetail = '';
+                switch(data.details) {
+                  case window.Hls.ErrorDetails.MANIFEST_LOAD_ERROR:
+                    errorDetail = 'Manifest load failed';
+                    break;
+                  case window.Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT:
+                    errorDetail = 'Manifest load timeout';
+                    break;
+                  case window.Hls.ErrorDetails.FRAG_LOAD_ERROR:
+                    errorDetail = 'Fragment load failed';
+                    break;
+                  case window.Hls.ErrorDetails.FRAG_LOAD_TIMEOUT:
+                    errorDetail = 'Fragment load timeout';
+                    break;
+                  case window.Hls.ErrorDetails.LEVEL_LOAD_ERROR:
+                    errorDetail = 'Level load failed';
+                    break;
+                  case window.Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT:
+                    errorDetail = 'Level load timeout';
+                    break;
+                  case window.Hls.ErrorDetails.LEVEL_PARSING_ERROR:
+                    errorDetail = 'Level parsing failed';
+                    break;
+                  default:
+                    errorDetail = data.details || 'Network error';
+                }
+                updateChannelStatus('error', `${errorDetail}, retrying...`);
+                // Try to recover by switching to next level or reloading
+                if (hls.levels && hls.levels.length > 1) {
+                  const nextLevel = (hls.currentLevel + 1) % hls.levels.length;
+                  hls.currentLevel = nextLevel;
+                }
+                hls.startLoad();
+              }
               break;
             case window.Hls.ErrorTypes.MEDIA_ERROR:
-              statusText.textContent = '媒体错误，正在恢复...';
+              // Only show error if not already playing smoothly
+              if (previewVideo.paused || previewVideo.readyState < 3) {
+                // Ignore non-fatal codec compatibility warnings during playback
+                if (data.details !== 'manifestIncompatibleCodecsError' || !hasStarted) {
+                  updateChannelStatus('error', `Media error (${data.details}), recovering...`);
+                }
+              }
               hls.recoverMediaError();
               break;
             default:
-              statusText.textContent = `错误: ${data.details}`;
+              updateChannelStatus('error', `Error: ${data.details}`);
               hls.destroy();
               break;
           }
@@ -538,33 +679,63 @@ async function startPreview(channel) {
 
       hls.loadSource(url);
       hls.attachMedia(previewVideo);
+
+      let hasStarted = false;
+
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
         // Get initial resolution
         const level = hls.levels[hls.currentLevel];
-        if (level) {
+        if (level && level.width > 0 && level.height > 0) {
           updateStats({ resolution: level.width + 'x' + level.height });
         }
 
-        previewVideo.play().then(() => {
-          statusText.textContent = `正在播放: ${channel.tvgName || channel.title}`;
-        }).catch((err) => {
-          statusText.textContent = `播放失败: ${err.message}`;
-        });
+        // Use canplay event instead of direct play() to avoid interruption
+        if (!hasStarted) {
+          hasStarted = true;
+          const playWhenReady = () => {
+            const playPromise = previewVideo.play();
+            if (playPromise !== undefined) {
+              playPromise.then(() => {
+                updateChannelStatus('playing', '', channel.tvgName || channel.title);
+              }).catch((err) => {
+                // Ignore interruption errors from rapid channel switching
+                if (err.name !== 'AbortError') {
+                  console.error('Play error:', err);
+                  updateChannelStatus('error', `Play failed: ${err.message}`);
+                }
+              });
+            }
+          };
+
+          // If already can play, start immediately
+          if (previewVideo.readyState >= 3) {
+            playWhenReady();
+          } else {
+            // Wait for canplay event
+            previewVideo.addEventListener('canplay', playWhenReady, { once: true });
+          }
+        }
       });
+
       return;
     }
 
     // Fallback to native
-    previewVideo.src = url;
-    await previewVideo.play();
-    statusText.textContent = `正在播放: ${channel.tvgName || channel.title}`;
+    try {
+      previewVideo.src = url;
+      await previewVideo.play();
+      statusText.textContent = `${i18n.t('playing')}: ${channel.tvgName || channel.title}`;
+    } catch (e) {
+      statusText.textContent = `${i18n.t('previewFailed')}: ${e.message || e}`;
+      console.error('Preview error:', e);
+    }
   } catch (e) {
-    statusText.textContent = `预览失败: ${e.message || e}`;
+    statusText.textContent = `${i18n.t('previewFailed')}: ${e.message || e}`;
     console.error('Preview error:', e);
   }
 }
 
-// 快速测速，只测时延（HEAD请求）
+// Quick speed test, only measure latency (HEAD request)
 async function quickTestSpeed(channel, callback) {
   const url = channel.uri;
   try {
@@ -573,7 +744,7 @@ async function quickTestSpeed(channel, callback) {
     const latencyMs = (performance.now() - start).toFixed(0);
 
     if (!response.ok) {
-      callback('无法连接');
+      callback('Unreachable');
       return;
     }
 
@@ -585,19 +756,19 @@ async function quickTestSpeed(channel, callback) {
       callback(`${latencyMs}ms ⚠`);
     }
   } catch (e) {
-    callback('超时');
+    callback('Timeout');
   }
 }
 
 async function testChannelSpeed(channel) {
   const ch = channel || currentState.selectedChannel;
   if (!ch) {
-    speedText.textContent = '请先选择频道';
+    speedText.textContent = 'Please select a channel first';
     return;
   }
 
   const url = ch.uri;
-  speedText.textContent = '正在测速...';
+  speedText.textContent = 'Testing...';
 
   try {
     // Measure latency only - this is what matters for channel switching
@@ -606,33 +777,33 @@ async function testChannelSpeed(channel) {
     const latencyMs = (performance.now() - start).toFixed(0);
 
     if (!response.ok) {
-      speedText.textContent = `测速失败: HTTP ${response.status}`;
+      speedText.textContent = `Test failed: HTTP ${response.status}`;
       return;
     }
 
     // Show latency with quality indicator
     let quality = '';
     if (latencyMs < 100) {
-      quality = '极佳';
+      quality = 'Excellent';
     } else if (latencyMs < 300) {
-      quality = '良好';
+      quality = 'Good';
     } else if (latencyMs < 800) {
-      quality = '一般';
+      quality = 'Fair';
     } else {
-      quality = '较差';
+      quality = 'Poor';
     }
 
-    speedText.textContent = `延迟: ${latencyMs}ms (${quality})`;
+    speedText.textContent = `Latency: ${latencyMs}ms (${quality})`;
   } catch (e) {
-    speedText.textContent = `测速失败: ${e.message || e}`;
+    speedText.textContent = `Test failed: ${e.message || e}`;
   }
 }
 
-// 初始化
+// Initialize
 window.addEventListener('DOMContentLoaded', async () => {
   if (!window.broadcastAPI) {
-    // 预加载失败时的降级提示
-    statusText.textContent = '预加载脚本加载失败，请检查 Electron 配置';
+    // Fallback when preload script fails
+    updateChannelStatus('error', 'Preload script failed to load, check Electron config');
     return;
   }
 
@@ -641,18 +812,18 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.broadcastAPI.getConfig(),
   ]);
 
-  // 保存初始频道数量用于判断是否需要自动测速
+  // Save initial channel count to determine if auto speed test is needed
   const initialChannelCount = initialState.channels?.length || 0;
 
   renderState(initialState);
 
-  // 加载配置
+  // Load config
   if (config && config.sources) {
     currentConfig = config;
     renderSourceSelect();
   }
 
-  // 如果初始就有频道，立即开始预测速
+  // If channels exist initially, start pre-test immediately
   if (initialChannelCount > 0) {
     setTimeout(() => preTestAllChannels(), 500);
   }
@@ -660,7 +831,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   window.broadcastAPI.onStateUpdate((newState) => {
     const hadChannels = currentState.channels && currentState.channels.length > 0;
     renderState(newState);
-    // 如果频道列表刚加载完成（从无到有），自动开始预测速
+    // Auto start pre-test when channels load (from none to some)
     if (!hadChannels && newState.channels && newState.channels.length > 0) {
       setTimeout(() => preTestAllChannels(), 500);
     }
@@ -668,9 +839,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   window.broadcastAPI.onCastResult((result) => {
     if (result.ok) {
-      statusText.textContent = result.message;
+      updateChannelStatus('casting', result.message);
     } else {
-      statusText.textContent = result.message || '投屏失败';
+      updateChannelStatus('error', result.message || 'Cast failed');
     }
   });
 });
@@ -682,26 +853,38 @@ deviceSelect.addEventListener('change', (e) => {
 });
 
 castButton.addEventListener('click', () => {
-  window.broadcastAPI.startCast();
+  // Visual feedback
+  castButton.classList.add('opacity-50', 'scale-95');
+  setTimeout(() => {
+    castButton.classList.remove('opacity-50', 'scale-95');
+  }, 150);
+
+  // Update status to show casting is starting
+  updateChannelStatus('casting', 'Starting cast...');
+
+  window.broadcastAPI.startCast().catch((err) => {
+    console.error('Cast failed:', err);
+    updateChannelStatus('error', `Cast failed: ${err.message || err}`);
+  });
 });
 
-// 刷新 DLNA 设备
+// Refresh DLNA devices
 refreshDeviceButton.addEventListener('click', () => {
   window.broadcastAPI.refreshDevices();
-  statusText.textContent = '正在搜索 DLNA 设备...';
+  updateChannelStatus('idle', 'Searching DLNA devices...');
 });
 
-// 刷新频道列表
+// Refresh channel list
 refreshChannelButton.addEventListener('click', () => {
   window.broadcastAPI.refreshChannels();
-  statusText.textContent = '正在重新加载频道列表...';
+  updateChannelStatus('idle', 'Reloading channels...');
 });
 
 speedButton.addEventListener('click', () => {
   testChannelSpeed();
 });
 
-// 频道搜索功能
+// Channel search
 if (channelSearch) {
   channelSearch.addEventListener('input', (e) => {
     searchKeyword = e.target.value.trim();
@@ -709,7 +892,7 @@ if (channelSearch) {
   });
 }
 
-// 按速度排序
+// Sort by speed
 if (sortBySpeedButton) {
   sortBySpeedButton.addEventListener('click', () => {
     isSortedBySpeed = !isSortedBySpeed;
@@ -718,12 +901,12 @@ if (sortBySpeedButton) {
   });
 }
 
-// 源选择切换
+// Source selection change
 if (sourceSelect) {
   sourceSelect.addEventListener('change', async (e) => {
     const sourceId = e.target.value;
     if (sourceId && sourceId !== currentConfig.currentSourceId) {
-      statusText.textContent = '正在切换信号源...';
+      updateChannelStatus('idle', 'Switching source...');
       await window.broadcastAPI.switchSource(sourceId);
       currentConfig.currentSourceId = sourceId;
       renderSourceSelect();
@@ -731,17 +914,17 @@ if (sourceSelect) {
   });
 }
 
-// 打开源管理弹窗
+// Open source management modal
 if (manageSourceButton) {
   manageSourceButton.addEventListener('click', openSourceModal);
 }
 
-// 关闭源管理弹窗
+// Close source management modal
 if (closeSourceModal) {
   closeSourceModal.addEventListener('click', closeSourceModalFn);
 }
 
-// 点击弹窗背景关闭
+// Click modal background to close
 if (sourceModal) {
   sourceModal.addEventListener('click', (e) => {
     if (e.target === sourceModal) {
@@ -750,30 +933,119 @@ if (sourceModal) {
   });
 }
 
-// 添加新源
+// Add new source
 if (addSourceButton) {
   addSourceButton.addEventListener('click', async () => {
     const name = newSourceName.value.trim();
     const url = newSourceUrl.value.trim();
     if (!name || !url) {
-      statusText.textContent = '请输入信号源名称和地址';
+      updateChannelStatus('error', 'Please enter source name and URL');
       return;
     }
     const result = await window.broadcastAPI.addSource({ name, url });
     if (result.success) {
-      // 刷新配置
+      // Refresh config
       const config = await window.broadcastAPI.getConfig();
       currentConfig = config;
       renderSourceSelect();
       renderSourceList();
-      // 清空输入
+      // Clear input
       newSourceName.value = '';
       newSourceUrl.value = '';
-      statusText.textContent = '信号源已添加';
+      updateChannelStatus('idle', 'Source added');
     } else {
-      statusText.textContent = result.error || '添加失败';
+      updateChannelStatus('error', result.error || 'Add failed');
     }
   });
 }
+
+// ========== i18n Internationalization Support ==========
+
+// Update all page text
+function updatePageText() {
+  // Update elements with data-i18n attribute
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (key) {
+      el.textContent = i18n.t(key);
+    }
+  });
+
+  // Update elements with data-i18n-title attribute
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    if (key) {
+      el.title = i18n.t(key);
+    }
+  });
+
+  // Update placeholder
+  if (channelSearch) {
+    channelSearch.placeholder = i18n.t('searchChannels');
+  }
+
+  // Update dynamic content
+  updateLanguageSelection();
+}
+
+// Update language selection state
+function updateLanguageSelection() {
+  const currentLang = i18n.getLang();
+  langOptions.forEach(btn => {
+    const lang = btn.getAttribute('data-lang');
+    const checkIcon = btn.querySelector('.check-icon');
+    if (lang === currentLang) {
+      btn.classList.add('border-sky-500', 'bg-sky-900/20');
+      checkIcon.classList.remove('hidden');
+    } else {
+      btn.classList.remove('border-sky-500', 'bg-sky-900/20');
+      checkIcon.classList.add('hidden');
+    }
+  });
+}
+
+// Settings page events
+if (settingsButton) {
+  settingsButton.addEventListener('click', () => {
+    settingsModal.classList.remove('hidden');
+    settingsModal.classList.add('flex');
+    updateLanguageSelection();
+  });
+}
+
+if (closeSettingsModal) {
+  closeSettingsModal.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+    settingsModal.classList.remove('flex');
+  });
+}
+
+// Click outside modal to close
+if (settingsModal) {
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) {
+      settingsModal.classList.add('hidden');
+      settingsModal.classList.remove('flex');
+    }
+  });
+}
+
+// Language switch
+langOptions.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const lang = btn.getAttribute('data-lang');
+    if (i18n.setLang(lang)) {
+      updatePageText();
+      // Language change doesn't affect channel status
+      // Just refresh the display with current state
+      updateChannelStatus(channelStatusState.type, channelStatusState.message);
+    }
+  });
+});
+
+// Initialize page text
+window.addEventListener('DOMContentLoaded', () => {
+  updatePageText();
+});
 
 
